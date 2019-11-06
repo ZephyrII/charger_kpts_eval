@@ -589,6 +589,12 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
         gt_y1, gt_x1, gt_y2, gt_x2 = tf.split(roi_gt_boxes, 4, axis=1)
         gt_h = gt_y2 - gt_y1
         gt_w = gt_x2 - gt_x1
+
+        # kpx, kpy = tf.split(roi_kp, 2, axis=1)
+        # kpy = (kpy - gt_y1) / gt_h
+        # kpx = (kpx - gt_x1) / gt_w
+        # roi_kp = tf.concat([kpy, kpx], 1)
+
         y1 = (y1 - gt_y1) / gt_h
         x1 = (x1 - gt_x1) / gt_w
         y2 = (y2 - gt_y1) / gt_h
@@ -675,7 +681,7 @@ class DetectionTargetLayer(KE.Layer):
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
             (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.MASK_SHAPE[0],
              self.config.MASK_SHAPE[1]),  # masks
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, 6*2)
+            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS*2)
         ]
 
     def compute_mask(self, inputs, mask=None):
@@ -1013,7 +1019,7 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
 
 
 def build_keypoints_graph(rois, feature_maps, image_meta,
-                         pool_size, num_classes, train_bn=True):
+                         pool_size, num_classes, train_bn=True, num_points=8):
     """Builds the computation graph of the mask head of Feature Pyramid Network.
 
     rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
@@ -1030,29 +1036,29 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     # ROI Pooling
     # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
     x = PyramidROIAlign([pool_size, pool_size],
-                        name="roi_align_maskp")([rois, image_meta] + feature_maps)
+                        name="roi_align_kp")([rois, image_meta] + feature_maps)
 
     # Conv layers
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_maskp_conv1")(x)
+                           name="mrcnn_kp_conv1")(x)
     x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_maskp_bn1')(x, training=train_bn)
+                           name='mrcnn_kp_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_maskp_conv2")(x)
+                           name="mrcnn_kp_conv2")(x)
     x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_maskp_bn2')(x, training=train_bn)
+                           name='mrcnn_kp_bn2')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_maskp_conv3")(x)
+                           name="mrcnn_kp_conv3")(x)
     x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_maskp_bn3')(x, training=train_bn)
+                           name='mrcnn_kp_bn3')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_maskp_conv4")(x)
+                           name="mrcnn_kp_conv4")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
@@ -1063,9 +1069,9 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     x = KL.TimeDistributed(KL.Flatten(),
                            name="mrcnn_kp_flat")(x)
 
-    x = KL.TimeDistributed(KL.Dense(6*2, activation="sigmoid"),
+    x = KL.TimeDistributed(KL.Dense(num_points*2, activation="sigmoid"),
                            name="mrcnn_kp")(x)
-    return  x #tf.stack([x,x], axis=-1)
+    return x
 
 ############################################################
 #  Loss Functions
@@ -1300,8 +1306,11 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     """
     # Load image and mask
     image = dataset.load_image(image_id)
-    mask, class_ids = dataset.load_mask(image_id)
-    kp = dataset.load_kp(image_id)
+    if dataset.image_info[image_id]['labeled']:
+        mask, class_ids = dataset.load_mask(image_id)
+        kp = dataset.load_kp(image_id)
+    else:
+        mask, class_ids, kp = dataset.query_gt(image_id)
 
 
     original_shape = image.shape
@@ -1723,7 +1732,7 @@ def generate_random_rois(image_shape, count, gt_class_ids, gt_boxes):
 
 def data_generator(dataset, config, shuffle=True, augment=False, augmentation=None,
                    random_rois=0, batch_size=1, detection_targets=False,
-                   no_augmentation_sources=None):
+                   no_augmentation_sources=None, num_points=8):
     """A generator that returns images and corresponding target class ids,
     bounding box deltas, and masks.
 
@@ -1784,7 +1793,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
         try:
             # Increment index to pick next image. Shuffle if at the start of an epoch.
             image_index = (image_index + 1) % len(image_ids)
-            if shuffle and image_index == 0:
+            if shuffle and image_index ==0:
                 np.random.shuffle(image_ids)
 
             # Get GT bounding boxes and masks for image.
@@ -1836,7 +1845,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 batch_gt_boxes = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
                 batch_gt_kp = np.zeros(
-                    (batch_size, config.MAX_GT_INSTANCES, 6*2), dtype=np.float32)
+                    (batch_size, config.MAX_GT_INSTANCES, num_points*2), dtype=np.float32)
                 batch_gt_masks = np.zeros(
                     (batch_size, gt_masks.shape[0], gt_masks.shape[1],
                      config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
@@ -1920,7 +1929,7 @@ class MaskRCNN():
     The actual Keras model is in the keras_model property.
     """
 
-    def __init__(self, mode, config, model_dir):
+    def __init__(self, mode, config, model_dir, num_points):
         """
         mode: Either "training" or "inference"
         config: A Sub-class of the Config class
@@ -1931,7 +1940,9 @@ class MaskRCNN():
         self.config = config
         self.model_dir = model_dir
         self.set_log_dir()
+        self.num_points = num_points
         self.keras_model = self.build(mode=mode, config=config)
+        self.epoch = 1
 
 
     def build(self, mode, config):
@@ -1971,12 +1982,12 @@ class MaskRCNN():
                 shape=[None, 4], name="input_gt_boxes", dtype=tf.float32)
 
             input_gt_kp = KL.Input(
-                shape=[None, 6*2], name="input_kp", dtype=tf.float32)
+                shape=[None, self.num_points*2], name="input_kp", dtype=tf.float32)
             # Normalize coordinates
             gt_boxes = KL.Lambda(lambda x: norm_boxes_graph(
                 x, K.shape(input_image)[1:3]))(input_gt_boxes)
-            gt_kp = KL.Lambda(lambda x: norm_kp_graph(
-                x, K.shape(input_image)[1:3]))(input_gt_kp)
+            # gt_kp = KL.Lambda(lambda x: norm_kp_graph(
+            #     x, K.shape(input_image)[1:3]))(input_gt_kp)
             # 3. GT Masks (zero padded)
             # [batch, height, width, MAX_GT_INSTANCES]
             if config.USE_MINI_MASK:
@@ -2025,6 +2036,14 @@ class MaskRCNN():
 
         # Note that P6 is used in RPN, but not in the classifier heads.
         rpn_feature_maps = [P2, P3, P4, P5, P6]
+        print("rpn_feature_maps", rpn_feature_maps)
+        fm = [KL.UpSampling2D(size=(16, 16))(P6), KL.UpSampling2D(size=(8,8))(P5),
+              KL.UpSampling2D(size=(4,4))(P4), KL.UpSampling2D(size=(2,2))(P3), P2]
+        # concat_fm = KL.Concatenate()(fm)
+        attention = KL.Lambda(lambda x: tf.reduce_mean(x, axis=-1, keepdims=True))(fm)
+        attention = KL.Lambda(lambda x: tf.transpose(x, [4, 1, 2, 3, 0]))(attention)
+
+        print("attention", attention)
         mrcnn_feature_maps = [P2, P3, P4, P5]
 
         # Anchors
@@ -2090,7 +2109,7 @@ class MaskRCNN():
             # padded. Equally, returned rois and targets are zero padded.
             rois, target_class_ids, target_bbox, target_mask, target_kp =\
                 DetectionTargetLayer(config, name="proposal_targets")([
-                    target_rois, input_gt_class_ids, gt_boxes, input_gt_masks, gt_kp])
+                    target_rois, input_gt_class_ids, gt_boxes, input_gt_masks, input_gt_kp])
 
             # Network Heads
             # TODO: verify that this handles zero padded ROIs
@@ -2107,10 +2126,11 @@ class MaskRCNN():
                                               train_bn=config.TRAIN_BN)
 
             mrcnn_keypoints = build_keypoints_graph(rois, mrcnn_feature_maps,
-                                              input_image_meta,
-                                              config.MASK_POOL_SIZE,
-                                              config.NUM_CLASSES,
-                                              train_bn=config.TRAIN_BN)
+                                                    input_image_meta,
+                                                    config.MASK_POOL_SIZE,
+                                                    config.NUM_CLASSES,
+                                                    train_bn=config.TRAIN_BN,
+                                                    num_points=config.NUM_POINTS)
 
             # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
@@ -2167,11 +2187,12 @@ class MaskRCNN():
                                               input_image_meta,
                                               config.MASK_POOL_SIZE,
                                               config.NUM_CLASSES,
-                                              train_bn=config.TRAIN_BN)
+                                              train_bn=config.TRAIN_BN,
+                                              num_points=config.NUM_POINTS)
 
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox, mrcnn_mask,
-                              rpn_rois, rpn_class, rpn_bbox, mrcnn_keypoints],
+                              rpn_rois, rpn_class, rpn_bbox, mrcnn_keypoints, attention],
                              name='mask_rcnn')
 
         # Add multi-GPU support.
@@ -2285,7 +2306,7 @@ class MaskRCNN():
             "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss", "mrcnn_kp_loss"]
         for name in loss_names:
             layer = self.keras_model.get_layer(name)
-            if layer.output in self.keras_model.losses: #Zephyr's comment
+            if layer.output in self.keras_model.losses:
                 continue
             loss = (
                 tf.reduce_mean(layer.output, keepdims=True)
@@ -2391,7 +2412,7 @@ class MaskRCNN():
         self.checkpoint_path = self.checkpoint_path.replace(
             "*epoch*", "{epoch:04d}")
 
-    def train(self, train_dataset, val_dataset, learning_rate, epochs, layers,
+    def train(self, train_dataset, val_dataset, learning_rate, epochs, layers, steps=10,
               augmentation=None, custom_callbacks=None, no_augmentation_sources=None):
         """Train the model.
         train_dataset, val_dataset: Training and validation Dataset objects.
@@ -2427,6 +2448,7 @@ class MaskRCNN():
         """
         assert self.mode == "training", "Create model in training mode."
 
+
         # Pre-defined layer regular expressions
         layer_regex = {
             # all layers but the backbone
@@ -2445,9 +2467,9 @@ class MaskRCNN():
         train_generator = data_generator(train_dataset, self.config, shuffle=True,
                                          augmentation=augmentation,
                                          batch_size=self.config.BATCH_SIZE,
-                                         no_augmentation_sources=no_augmentation_sources)
+                                         no_augmentation_sources=no_augmentation_sources, num_points=self.num_points)
         val_generator = data_generator(val_dataset, self.config, shuffle=True,
-                                       batch_size=self.config.BATCH_SIZE)
+                                       batch_size=self.config.BATCH_SIZE, num_points=self.num_points)
 
         # Create log_dir if it does not exist
         if not os.path.exists(self.log_dir):
@@ -2482,13 +2504,13 @@ class MaskRCNN():
         self.keras_model.fit_generator(
             train_generator,
             initial_epoch=self.epoch,
-            epochs=epochs,
-            steps_per_epoch=self.config.STEPS_PER_EPOCH,
+            epochs=epochs+self.epoch,
+            steps_per_epoch=steps,
             callbacks=callbacks,
             validation_data=val_generator,
             validation_steps=self.config.VALIDATION_STEPS,
             max_queue_size=100,
-            workers=workers,
+            workers=1,
             use_multiprocessing=True,
         )
         self.epoch = max(self.epoch, epochs)
@@ -2638,7 +2660,7 @@ class MaskRCNN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        detections, _, _, mrcnn_mask, _, _, _, kp =\
+        detections, _, _, mrcnn_mask, _, _, _, kp, attention =\
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
         # Process detections
         results = []
@@ -2653,6 +2675,7 @@ class MaskRCNN():
                 "scores": final_scores,
                 "masks": final_masks,
                 "kp": kp,
+                "attention": attention,
             })
         return results
 
@@ -2987,7 +3010,7 @@ def denorm_boxes_graph(boxes, shape):
     return tf.cast(tf.round(tf.multiply(boxes, scale) + shift), tf.int32)
 
 
-def norm_kp_graph(boxes, shape):
+def norm_kp_graph(kp, shape):
     """Converts boxes from pixel coordinates to normalized coordinates.
     boxes: [..., (y1, x1, y2, x2)] in pixel coordinates
     shape: [..., (height, width)] in pixels
@@ -3001,4 +3024,4 @@ def norm_kp_graph(boxes, shape):
     h, w = tf.split(tf.cast(shape, tf.float32), 2)
     scale = tf.concat([h, w, h, w, h, w, h, w, h, w, h, w], axis=-1)
     # shift = tf.constant([0., 0., 1., 1.])
-    return tf.divide(boxes, scale)
+    return tf.divide(kp, scale)

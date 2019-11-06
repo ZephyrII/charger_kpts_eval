@@ -24,6 +24,8 @@ class Config(object):
     # experiment is running.
     NAME = None  # Override in sub-classes
 
+    NUM_POINTS = 8
+
     # NUMBER OF GPUs to use. When using only a CPU, this needs to be set to 1.
     GPU_COUNT = 1
 
@@ -45,7 +47,7 @@ class Config(object):
     # Number of validation steps to run at the end of every training epoch.
     # A bigger number improves accuracy of validation stats, but slows
     # down the training.
-    VALIDATION_STEPS = 50
+    VALIDATION_STEPS = 5
 
     # Backbone network architecture
     # Supported values are: resnet50, resnet101.
@@ -178,7 +180,7 @@ class Config(object):
     # The Mask RCNN paper uses lr=0.02, but on TensorFlow it causes
     # weights to explode. Likely due to differences in optimizer
     # implementation.
-    LEARNING_RATE = 0.001
+    LEARNING_RATE = 0.0001
     LEARNING_MOMENTUM = 0.9
 
     # Weight decay regularization
@@ -191,7 +193,8 @@ class Config(object):
         "rpn_bbox_loss": 1.,
         "mrcnn_class_loss": 1.,
         "mrcnn_bbox_loss": 1.,
-        "mrcnn_mask_loss": 1.
+        "mrcnn_mask_loss": 1.,
+        "mrcnn_kp_loss": 10.
     }
 
     # Use RPN ROIs or externally generated ROIs for training
