@@ -1938,7 +1938,7 @@ class MaskRCNN():
         self.config = config
         self.model_dir = model_dir
         self.set_log_dir()
-        self.num_points = 8
+        self.num_points = 7
         self.keras_model = self.build(mode=mode, config=config)
 
 

@@ -24,7 +24,7 @@ class Config(object):
     # experiment is running.
     NAME = None  # Override in sub-classes
 
-    NUM_POINTS = 8
+    NUM_POINTS = None
 
     # NUMBER OF GPUs to use. When using only a CPU, this needs to be set to 1.
     GPU_COUNT = 1

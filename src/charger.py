@@ -42,9 +42,10 @@ import keras
 ROOT_DIR = os.path.abspath("../../")
 
 # Import Mask RCNN
-sys.path.append(ROOT_DIR)  # To find local version of the library
+# sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn.config import Config
 from mrcnn import model as modellib, utils
+
 
 # Path to trained weights file
 COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
@@ -58,11 +59,12 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 class chargerConfig(Config):
 
     NAME = "charger"
-    IMAGES_PER_GPU = 2
+    IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
     STEPS_PER_EPOCH = 500
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.001
+    NUM_POINTS = 7
 
 
 ############################################################
@@ -132,9 +134,10 @@ class ChargerDataset(utils.Dataset):
             ymax = float(bbox.find('ymax').text)
             bw = xmax-xmin
             bh = ymax-ymin
-            for i in range(8):
+            for i in range(7):
                 kp = kps.find('keypoint' + str(i))
                 keypoints.append(((float(kp.find('x').text)-(xmin*w))/bw/w, (float(kp.find('y').text)-(ymin*h))/bh/h))
+                # keypoints.append((float(kp.find('x').text)/w, float(kp.find('y').text)/h))
             # print("keypoints", keypoints)
         return keypoints
 
@@ -196,7 +199,7 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=200,
+                epochs=100,
                 layers='heads')
 
 
@@ -217,7 +220,7 @@ def color_splash(image, mask):
         splash = np.where(mask, gray, image).astype(np.uint8)
     else:
         splash = gray.astype(np.uint8)
-    return image
+    return splash
 
 
 def detect_and_color_splash(model, image_path=None, video_path=None):
@@ -241,12 +244,14 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
             # Color splash
             splash = color_splash(image, r['masks'])
             kps = r['kp'][0][0]
+            print(kps)
             if len(r['rois'])==0:
                 continue
             roi = r['rois'][0]
             bw = roi[3]-roi[1]
             bh = roi[2]-roi[0]
-            for i in range(8):
+            for i in range(7):
+                # cv2.circle(splash, (int(kps[i*2]*960), int(kps[i*2+1]*720)), 5, (0,0,255), -1)
                 cv2.circle(splash, (int(kps[i*2]*bw)+roi[1], int(kps[i*2+1]*bh+roi[0])), 5, (0,0,255), -1)
             cv2.imshow('lol', cv2.resize(splash, (1280, 960)))
             # attention = r['attention']
@@ -295,7 +300,7 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
                 splash = color_splash(image, r['masks'])
                 # RGB -> BGR to save image to video
                 splash = splash[..., ::-1]
-                cv2.imshow('lol', cv2.resize(splash, (1280,960)))
+                cv2.imshow('lol', cv2.resize(splash, (1280, 960)))
                 cv2.waitKey(0)
                 # Add image to video writer
                 # vwriter.write(splash)
