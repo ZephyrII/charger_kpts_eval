@@ -483,7 +483,7 @@ def overlaps_graph(boxes1, boxes2):
     return overlaps
 
 
-def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, config):
+def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, gt_yaw, config):
     """Generates detection targets for one image. Subsamples proposals and
     generates target class IDs, bounding box deltas, and masks for each.
 
@@ -518,6 +518,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
     gt_class_ids = tf.boolean_mask(gt_class_ids, non_zeros, name="trim_gt_class_ids")
     gt_masks = tf.gather(gt_masks, tf.where(non_zeros)[:, 0], axis=2, name="trim_gt_masks")
     gt_kp = tf.boolean_mask(gt_kp, non_zeros, name="trim_gt_kp")
+    gt_yaw = tf.boolean_mask(gt_yaw, non_zeros, name="trim_gt_yaw")
     # Handle COCO crowds
     # A crowd box in COCO is a bounding box around several instances. Exclude
     # them from training. A crowd box is given a negative class ID.
@@ -528,6 +529,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
     gt_boxes = tf.gather(gt_boxes, non_crowd_ix)
     gt_masks = tf.gather(gt_masks, non_crowd_ix, axis=2)
     gt_kp = tf.gather(gt_kp, non_crowd_ix)
+    gt_yaw = tf.gather(gt_yaw, non_crowd_ix)
 
     # Compute overlaps matrix [proposals, gt_boxes]
     overlaps = overlaps_graph(proposals, gt_boxes)
@@ -569,6 +571,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
     roi_gt_boxes = tf.gather(gt_boxes, roi_gt_box_assignment)
     roi_gt_class_ids = tf.gather(gt_class_ids, roi_gt_box_assignment)
     roi_kp = tf.gather(gt_kp, roi_gt_box_assignment)
+    roi_yaw = tf.gather(gt_yaw, roi_gt_box_assignment)
 
     # Compute bbox refinement for positive ROIs
     deltas = utils.box_refinement_graph(positive_rois, roi_gt_boxes)
@@ -622,10 +625,9 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
     deltas = tf.pad(deltas, [(0, N + P), (0, 0)])
     masks = tf.pad(masks, [[0, N + P], (0, 0), (0, 0)])
     kp = tf.pad(roi_kp, [(0, N + P), (0, 0)])
-    # print("masks", masks)
-    # print("KP", kp)
+    yaw = tf.pad(roi_yaw, [(0, N + P), (0, 0)])
 
-    return rois, roi_gt_class_ids, deltas, masks, kp
+    return rois, roi_gt_class_ids, deltas, masks, kp, yaw
 
 
 class DetectionTargetLayer(KE.Layer):
@@ -663,14 +665,15 @@ class DetectionTargetLayer(KE.Layer):
         gt_boxes = inputs[2]
         gt_masks = inputs[3]
         gt_kp = inputs[4]
+        gt_yaw = inputs[5]
 
         # Slice the batch and run a graph for each slice
         # TODO: Rename target_bbox to target_deltas for clarity
-        names = ["rois", "target_class_ids", "target_bbox", "target_mask", "target_kp"]
+        names = ["rois", "target_class_ids", "target_bbox", "target_mask", "target_kp", "target_yaw"]
         outputs = utils.batch_slice(
-            [proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp],
-            lambda w, x, y, z, a: detection_targets_graph(
-                w, x, y, z, a, self.config),
+            [proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, gt_yaw],
+            lambda w, x, y, z, a, b: detection_targets_graph(
+                w, x, y, z, a, b, self.config),
             self.config.IMAGES_PER_GPU, names=names)
         return outputs
 
@@ -681,11 +684,12 @@ class DetectionTargetLayer(KE.Layer):
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
             (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.MASK_SHAPE[0],
              self.config.MASK_SHAPE[1]),  # masks
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS*2)
+            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS * 2),
+            (None, self.config.TRAIN_ROIS_PER_IMAGE)
         ]
 
     def compute_mask(self, inputs, mask=None):
-        return [None, None, None, None, None]
+        return [None, None, None, None, None, None]
 
 
 ############################################################
@@ -1073,6 +1077,61 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
                            name="mrcnn_kp")(x)
     return x
 
+
+def build_yaw_graph(rois, feature_maps, image_meta, pool_size, num_classes, train_bn=True):
+    """Builds the computation graph of the mask head of Feature Pyramid Network.
+
+    rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
+          coordinates.
+    feature_maps: List of feature maps from different layers of the pyramid,
+                  [P2, P3, P4, P5]. Each has a different resolution.
+    image_meta: [batch, (meta data)] Image details. See compose_image_meta()
+    pool_size: The width of the square feature map generated from ROI Pooling.
+    num_classes: number of classes, which determines the depth of the results
+    train_bn: Boolean. Train or freeze Batch Norm layers
+
+    Returns: Masks [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
+    """
+    # ROI Pooling
+    # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
+    x = PyramidROIAlign([pool_size, pool_size],
+                        name="roi_align_yaw")([rois, image_meta] + feature_maps)
+
+    # Conv layers
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+                           name="mrcnn_yaw_conv1")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_yaw_bn1')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+                           name="mrcnn_yaw_conv2")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_yaw_bn2')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+                           name="mrcnn_yaw_conv3")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_yaw_bn3')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+                           name="mrcnn_yaw_conv4")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_yaw_bn4')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
+                           name="mrcnn_yaw_deconv")(x)
+
+    x = KL.TimeDistributed(KL.Flatten(),
+                           name="mrcnn_yaw_flat")(x)
+
+    x = KL.TimeDistributed(KL.Dense(1, activation="sigmoid"),
+                           name="mrcnn_yaw")(x)
+    return x
+
 ############################################################
 #  Loss Functions
 ############################################################
@@ -1209,30 +1268,13 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
 
 
 def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
-    # # Reshape to merge batch and roi dimensions for simplicity.
-    # target_class_ids = K.reshape(target_class_ids, (-1,))
-    # target_bbox = K.reshape(target_bbox, (-1, 4))
-    # pred_bbox = K.reshape(pred_bbox, (-1, K.int_shape(pred_bbox)[2], 4))
-    #
-    # # Only positive ROIs contribute to the loss. And only
-    # # the right class_id of each ROI. Get their indices.
-    # positive_roi_ix = tf.where(target_class_ids > 0)[:, 0]
-    # positive_roi_class_ids = tf.cast(
-    #     tf.gather(target_class_ids, positive_roi_ix), tf.int64)
-    # indices = tf.stack([positive_roi_ix, positive_roi_class_ids], axis=1)
-    #
-    # # Gather the deltas (predicted and true) that contribute to loss
-    # target_bbox = tf.gather(target_bbox, positive_roi_ix)
-    # pred_bbox = tf.gather_nd(pred_bbox, indices)
-    #
-    # # Smooth-L1 Loss
-    # loss = K.switch(tf.size(target_bbox) > 0,
-    #                 smooth_l1_loss(y_true=target_bbox, y_pred=pred_bbox),
-    #                 tf.constant(0.0))
-    # loss = K.mean(loss)
-    # print("loool OK")#, target_kp, pred_kp)
-    # tf.transpose(target_kp, [1, 0, 2])
     loss = keras.losses.mean_squared_error(target_kp, pred_kp)
+    loss = K.mean(loss)
+    return loss
+
+
+def mrcnn_yaw_loss_graph(target_yaw, pred_yaw):
+    loss = keras.losses.mean_squared_error(target_yaw, pred_yaw)
     loss = K.mean(loss)
     return loss
 
@@ -1307,7 +1349,8 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     # Load image and mask
     image = dataset.load_image(image_id)
     mask, class_ids = dataset.load_mask(image_id)
-    kp = dataset.load_kp(image_id)
+    kp = dataset.load_kp(image_id, config.NUM_POINTS)
+    yaw = dataset.load_yaw(image_id)
     # mask, class_ids, kp = dataset.query_gt(image_id)
 
 
@@ -1384,7 +1427,7 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     image_meta = compose_image_meta(image_id, original_shape, image.shape,
                                     window, scale, active_class_ids)
 
-    return image, image_meta, class_ids, bbox, mask, kp
+    return image, image_meta, class_ids, bbox, mask, kp, yaw
 
 
 def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks, config):
@@ -1799,12 +1842,12 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
 
             # If the image source is not to be augmented pass None as augmentation
             if dataset.image_info[image_id]['source'] in no_augmentation_sources:
-                image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_kp = \
-                load_image_gt(dataset, config, image_id, augment=augment,
+                image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_kp, gt_yaw = \
+                    load_image_gt(dataset, config, image_id, augment=augment,
                               augmentation=None,
                               use_mini_mask=config.USE_MINI_MASK)
             else:
-                image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_kp = \
+                image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_kp, gt_yaw = \
                     load_image_gt(dataset, config, image_id, augment=augment,
                                 augmentation=augmentation,
                                 use_mini_mask=config.USE_MINI_MASK)
@@ -1844,6 +1887,8 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                     (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
                 batch_gt_kp = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, num_points*2), dtype=np.float32)
+                batch_gt_yaw = np.zeros(
+                    (batch_size, config.MAX_GT_INSTANCES, 1), dtype=np.float32)
                 batch_gt_masks = np.zeros(
                     (batch_size, gt_masks.shape[0], gt_masks.shape[1],
                      config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
@@ -1876,6 +1921,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             batch_gt_boxes[b, :gt_boxes.shape[0]] = gt_boxes
             batch_gt_kp[b, :len(gt_kp)] = np.reshape(gt_kp, -1)
+            batch_gt_yaw[b] = gt_yaw
             batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
             if random_rois:
                 batch_rpn_rois[b] = rpn_rois
@@ -1889,7 +1935,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             # Batch full?
             if b >= batch_size:
                 inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
-                          batch_gt_class_ids, batch_gt_boxes, batch_gt_masks, batch_gt_kp]
+                          batch_gt_class_ids, batch_gt_boxes, batch_gt_masks, batch_gt_kp, batch_gt_yaw]
                 outputs = []
 
                 if random_rois:
@@ -1938,9 +1984,8 @@ class MaskRCNN():
         self.config = config
         self.model_dir = model_dir
         self.set_log_dir()
-        self.num_points = 7
+        self.num_points = config.NUM_POINTS
         self.keras_model = self.build(mode=mode, config=config)
-
 
     def build(self, mode, config):
         """Build Mask R-CNN architecture.
@@ -1980,6 +2025,8 @@ class MaskRCNN():
 
             input_gt_kp = KL.Input(
                 shape=[None, self.num_points*2], name="input_kp", dtype=tf.float32)
+            input_gt_yaw = KL.Input(
+                shape=[None, 1], name="input_yaw", dtype=tf.float32)
             # Normalize coordinates
             gt_boxes = KL.Lambda(lambda x: norm_boxes_graph(
                 x, K.shape(input_image)[1:3]))(input_gt_boxes)
@@ -2033,14 +2080,12 @@ class MaskRCNN():
 
         # Note that P6 is used in RPN, but not in the classifier heads.
         rpn_feature_maps = [P2, P3, P4, P5, P6]
-        print("rpn_feature_maps", rpn_feature_maps)
         fm = [KL.UpSampling2D(size=(16, 16))(P6), KL.UpSampling2D(size=(8,8))(P5),
-              KL.UpSampling2D(size=(4,4))(P4), KL.UpSampling2D(size=(2,2))(P3), P2]
+              KL.UpSampling2D(size=(4, 4))(P4), KL.UpSampling2D(size=(2, 2))(P3), P2]
         # concat_fm = KL.Concatenate()(fm)
         attention = KL.Lambda(lambda x: tf.reduce_mean(x, axis=-1, keepdims=True))(fm)
         attention = KL.Lambda(lambda x: tf.transpose(x, [4, 1, 2, 3, 0]))(attention)
 
-        print("attention", attention)
         mrcnn_feature_maps = [P2, P3, P4, P5]
 
         # Anchors
@@ -2104,9 +2149,9 @@ class MaskRCNN():
             # Subsamples proposals and generates target outputs for training
             # Note that proposal class IDs, gt_boxes, and gt_masks are zero
             # padded. Equally, returned rois and targets are zero padded.
-            rois, target_class_ids, target_bbox, target_mask, target_kp =\
+            rois, target_class_ids, target_bbox, target_mask, target_kp, target_yaw = \
                 DetectionTargetLayer(config, name="proposal_targets")([
-                    target_rois, input_gt_class_ids, gt_boxes, input_gt_masks, input_gt_kp])
+                    target_rois, input_gt_class_ids, gt_boxes, input_gt_masks, input_gt_kp, input_gt_yaw])
 
             # Network Heads
             # TODO: verify that this handles zero padded ROIs
@@ -2129,6 +2174,12 @@ class MaskRCNN():
                                                     train_bn=config.TRAIN_BN,
                                                     num_points=config.NUM_POINTS)
 
+            mrcnn_yaw = build_yaw_graph(rois, mrcnn_feature_maps,
+                                        input_image_meta,
+                                        config.MASK_POOL_SIZE,
+                                        config.NUM_CLASSES,
+                                        train_bn=config.TRAIN_BN)
+
             # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
 
@@ -2145,17 +2196,19 @@ class MaskRCNN():
                 [target_mask, target_class_ids, mrcnn_mask])
             kp_loss = KL.Lambda(lambda x: mrcnn_keypoints_loss_graph(*x), name="mrcnn_kp_loss")(
                 [target_kp, mrcnn_keypoints])
+            yaw_loss = KL.Lambda(lambda x: mrcnn_yaw_loss_graph(*x), name="mrcnn_yaw_loss")(
+                [target_yaw, mrcnn_yaw])
             # kp_loss=0
 
             # Model
-            inputs = [input_image, input_image_meta,
-                      input_rpn_match, input_rpn_bbox, input_gt_class_ids, input_gt_boxes, input_gt_masks, input_gt_kp]
+            inputs = [input_image, input_image_meta, input_rpn_match, input_rpn_bbox, input_gt_class_ids,
+                      input_gt_boxes, input_gt_masks, input_gt_kp, input_gt_yaw]
             if not config.USE_RPN_ROIS:
                 inputs.append(input_rois)
             outputs = [rpn_class_logits, rpn_class, rpn_bbox,
                        mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask,
                        rpn_rois, output_rois,
-                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss, kp_loss]
+                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss, kp_loss, yaw_loss]
             model = KM.Model(inputs, outputs, name='mask_rcnn')
         else:
             # Network Heads
@@ -2187,9 +2240,15 @@ class MaskRCNN():
                                               train_bn=config.TRAIN_BN,
                                               num_points=config.NUM_POINTS)
 
+            mrcnn_yaw = build_yaw_graph(detection_boxes, mrcnn_feature_maps,
+                                        input_image_meta,
+                                        config.MASK_POOL_SIZE,
+                                        config.NUM_CLASSES,
+                                        train_bn=config.TRAIN_BN)
+
             model = KM.Model([input_image, input_image_meta, input_anchors],
                              [detections, mrcnn_class, mrcnn_bbox, mrcnn_mask,
-                              rpn_rois, rpn_class, rpn_bbox, mrcnn_keypoints, attention],
+                              rpn_rois, rpn_class, rpn_bbox, mrcnn_keypoints, attention, mrcnn_yaw],
                              name='mask_rcnn')
 
         # Add multi-GPU support.
@@ -2300,7 +2359,7 @@ class MaskRCNN():
         self.keras_model._per_input_losses = {}
         loss_names = [
             "rpn_class_loss",  "rpn_bbox_loss",
-            "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss", "mrcnn_kp_loss"]
+            "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss", "mrcnn_kp_loss", "mrcnn_yaw_loss"]
         for name in loss_names:
             layer = self.keras_model.get_layer(name)
             if layer.output in self.keras_model.losses:
@@ -2656,16 +2715,17 @@ class MaskRCNN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        detections, _, _, mrcnn_mask, _, _, _, kp, attention =\
+        detections, _, _, mrcnn_mask, _, _, _, kp, attention, yaw = \
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
-        # print("xd outputs", self.keras_model.outputs)
         # Process detections
+
         results = []
         for i, image in enumerate(images):
-            final_rois, final_class_ids, final_scores, final_masks =\
+            final_rois, final_class_ids, final_scores, final_masks = \
                 self.unmold_detections(detections[i], mrcnn_mask[i],
                                        image.shape, molded_images[i].shape,
                                        windows[i])
+
             results.append({
                 "rois": final_rois,
                 "class_ids": final_class_ids,
@@ -2673,6 +2733,7 @@ class MaskRCNN():
                 "masks": final_masks,
                 "kp": kp,
                 "attention": attention,
+                "yaw": yaw,
             })
         return results
 
@@ -3021,4 +3082,4 @@ def norm_kp_graph(kp, shape):
     h, w = tf.split(tf.cast(shape, tf.float32), 2)
     scale = tf.concat([h, w, h, w, h, w, h, w, h, w, h, w, h, w, h, w], axis=-1)
     # shift = tf.constant([0., 0., 1., 1.])
-    return tf.divide(kp, scale)
+    return kp

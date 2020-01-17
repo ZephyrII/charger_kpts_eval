@@ -61,10 +61,10 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 500
+    STEPS_PER_EPOCH = 270
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.001
-    NUM_POINTS = 7
+    NUM_POINTS = 6
 
 
 ############################################################
@@ -83,6 +83,8 @@ class ChargerDataset(utils.Dataset):
 
         # Train or validation dataset?
         assert subset in ["train", "val"]
+        if subset == "val":
+            dataset_dir = os.path.join(dataset_dir, 'val')
         annotations = os.listdir(os.path.join(dataset_dir, 'annotations'))
 
         # Add images
@@ -115,9 +117,10 @@ class ChargerDataset(utils.Dataset):
         mask = cv2.imread(info['mask'])
         return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
 
-    def load_kp(self, image_id):
+    def load_kp(self, image_id, num_points):
 
         info = self.image_info[image_id]
+        # print(image_id)
         ann_fname = info['annotation']
         tree = ET.parse(ann_fname)
         root = tree.getroot()
@@ -125,6 +128,8 @@ class ChargerDataset(utils.Dataset):
         size = root.find('size')
         w = int(size.find('width').text)
         h = int(size.find('height').text)
+        # offset_x = int(root.find('offset_x').text)
+        # offset_y = int(root.find('offset_y').text)
         for object in root.findall('object'):
             kps = object.find('keypoints')
             bbox = object.find('bndbox')
@@ -132,14 +137,32 @@ class ChargerDataset(utils.Dataset):
             ymin = float(bbox.find('ymin').text)
             xmax = float(bbox.find('xmax').text)
             ymax = float(bbox.find('ymax').text)
-            bw = xmax-xmin
-            bh = ymax-ymin
-            for i in range(7):
+            bw = (xmax - xmin) * w
+            bh = (ymax - ymin) * h
+
+            for i in range(num_points):
                 kp = kps.find('keypoint' + str(i))
-                keypoints.append(((float(kp.find('x').text)-(xmin*w))/bw/w, (float(kp.find('y').text)-(ymin*h))/bh/h))
+                # print("float(kp.find('x').text)", float(kp.find('x').text))
+                # print("w", w)
+                # print("bw", bw)
+                # print("bh", bh)
+                # print("", )
+                keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
+                                  (float(kp.find('y').text) - ymin) * h / bh))
                 # keypoints.append((float(kp.find('x').text)/w, float(kp.find('y').text)/h))
             # print("keypoints", keypoints)
         return keypoints
+
+    def load_yaw(self, image_id):
+
+        info = self.image_info[image_id]
+        ann_fname = info['annotation']
+        tree = ET.parse(ann_fname)
+        root = tree.getroot()
+        theta = 0
+        for obj in root.findall('object'):
+            theta = float(obj.find('theta').text)
+        return (theta + 1) / 2
 
     def image_reference(self, image_id):
         """Return the path of the image."""
@@ -233,26 +256,32 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
 
     # Image or video?
     if image_path:
-        images = os.listdir(image_path)
+        images = os.listdir(os.path.join(image_path, "images_bright"))
         for im in images:
             # Run model detection and generate the color splash effect
-            # print("Running on {}".format(args.image))
-            # Read image
-            image = skimage.io.imread(os.path.join(image_path,im))
-            # Detect objects
-            r = model.detect([image], verbose=1)[0]
-            # Color splash
+            tree = ET.parse(os.path.join("/root/share/tf/dataset/Inea/6-point/val/", 'annotations', im[:-4] + ".txt"))
+            root = tree.getroot()
+            theta = 0
+            for obj in root.findall('object'):
+                theta = float(obj.find('theta').text)
+            gt = theta * 180 / 3.14159
+            print("GT yaw", gt)
+            # image = skimage.io.imread(os.path.join(image_path, "images_bright", im))
+            image = cv2.imread(os.path.join(image_path, "images_bright", im))
+            r = model.detect([image], verbose=0)[0]
             splash = color_splash(image, r['masks'])
             kps = r['kp'][0][0]
-            print(kps)
+            # print(kps)
             if len(r['rois'])==0:
                 continue
             roi = r['rois'][0]
+            print("yooooooł", (r['yaw'][0][0] * 2 - 1) * 180 / 3.14159)
             bw = roi[3]-roi[1]
             bh = roi[2]-roi[0]
-            for i in range(7):
-                # cv2.circle(splash, (int(kps[i*2]*960), int(kps[i*2+1]*720)), 5, (0,0,255), -1)
-                cv2.circle(splash, (int(kps[i*2]*bw)+roi[1], int(kps[i*2+1]*bh+roi[0])), 5, (0,0,255), -1)
+            for i in range(config.NUM_POINTS):
+                # cv2.circle (splash, (int(kps[i*2]*960), int(kps[i*2+1]*720)), 5, (0,0,255), -1)
+                cv2.circle(splash, (int(kps[i * 2] * bw) + roi[1], int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255),
+                           -1)
             cv2.imshow('lol', cv2.resize(splash, (1280, 960)))
             # attention = r['attention']
             # attention = (attention+abs(np.min(attention)))/(abs(np.min(attention))+abs(np.max(attention)))
@@ -295,7 +324,7 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
                 image = image[..., ::-1]
                 # Detect objects
                 r = model.detect([image], verbose=0)[0]
-                print(r)
+                # print(r)
                 # Color splash
                 splash = color_splash(image, r['masks'])
                 # RGB -> BGR to save image to video
@@ -305,8 +334,6 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
                 # Add image to video writer
                 # vwriter.write(splash)
                 count += 1
-        # vwriter.release()
-    # print("Saved to ", file_name)
 
 
 ############################################################
