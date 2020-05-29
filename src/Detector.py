@@ -84,29 +84,30 @@ class ChargerConfig(Config):
     # Number of classes (including background)
     NUM_CLASSES = 1 + 1  # Background + charger
 
-    # Number of training steps per epoch
-    STEPS_PER_EPOCH = 500
-
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.001
+    # LEARNING_RATE = 0.001
+    NUM_POINTS = 7
 
 class Detector:
 
-    def __init__(self, path_to_model, path_to_pole_model, camera_matrix):
+    def __init__(self, path_to_model, path_to_pole_model, path_to_model_bottom=None):
         np.set_printoptions(suppress=True)
         np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
-        self.init_det = True
         self.slice_size = (720, 960)
+        # self.slice_size = (1584, 2112)
         self.offset = (0, 0)
         self.scale = 1.0
+        # self.scale = 0.7
+        self.charger_to_slice_ratio = 0.5
         self.detections = []
         self.best_detection = None
         self.mask_reshaped = None
         self.contour = None
         self.frame_shape = None
         self.moving_avg_image = None
-        self.camera_matrix = camera_matrix
+        self.init_det = True
+        self.bottom = False
 
         # path_to_pole_model = path_to_pole_model
         self.pole_detection_graph = tf.Graph()
@@ -128,9 +129,21 @@ class Detector:
         weights_path = model.find_last()
 
         # Load weights
-        print("Loading weights ", weights_path)
+        # print("Loading weights ", weights_path)
         model.load_weights(weights_path, by_name=True)
         self.det_model = model
+
+        if path_to_model_bottom is not None:
+            config.NUM_POINTS = 4
+            model_bottom = modellib.MaskRCNN(mode="inference", config=config,
+                                             model_dir=path_to_model_bottom)
+
+            weights_path_bottom = model_bottom.find_last()
+
+            # Load weights
+            print("Loading weights ", weights_path_bottom)
+            model_bottom.load_weights(weights_path_bottom, by_name=True)
+            self.det_model_bottom = model_bottom
 
         self.rpn_box_predictor_features = None
         self.class_predictor_weights = None
@@ -148,6 +161,7 @@ class Detector:
 
         Returns result image.
         """
+        return image
         # Make a grayscale copy of the image. The grayscale copy still
         # has 3 RGB channels, though.
         gray = np.zeros_like(image)  # skimage.color.gray2rgb(skimage.color.rgb2gray(image)) * 255
@@ -160,13 +174,17 @@ class Detector:
             splash = gray.astype(np.uint8)
         return splash
 
-    def get_CNN_output(self, image_np):
-        r = self.det_model.detect([image_np], verbose=1)[0]
+    def get_CNN_output(self, image_np):  # TODO: scale keypoints
+        # print("scale", self.scale, "\n\n")
+        if self.bottom:
+            r = self.det_model_bottom.detect([image_np], verbose=0)[0]
+        else:
+            r = self.det_model.detect([image_np], verbose=0)[0]
         # Color splash
         splash = self. color_splash(image_np, r['masks'])
-        kps = r['kp'][0][0]
         if len(r['rois']) == 0:
             return
+        kps = r['kp'][0][0]
         roi = r['rois'][0]
         bw = roi[3] - roi[1]
         bh = roi[2] - roi[0]
@@ -177,69 +195,113 @@ class Detector:
             (int(roi[3] + self.offset[1]), self.frame_shape[1]))
         abs_ymax = np.min(
             (int(roi[2] + self.offset[0]), self.frame_shape[0]))
-        print(roi[0], image_np.shape[0], self.offset[0], "xd")
-        for i in range(8):
+        # print(roi[0], image_np.shape[0], self.offset[0], "xd")
+        for i in range(int(len(kps) / 2)):
             absolute_kp.append(
-                (int(kps[i * 2] * bw) + self.offset[1]+roi[1], int(kps[i * 2 + 1] * bh) + self.offset[0]+roi[0]))
-            cv2.circle(splash, (int(kps[i * 2] * bw) + roi[1], int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255), -1)
-        cv2.imshow('lol', cv2.resize(splash, (1280, 960)))
-        detection = dict(score=r['scores'], abs_rect=(abs_xmin, abs_ymin, abs_xmax, abs_ymax), mask=np.sum(r['masks'],
+                (int(kps[i * 2] * bw + self.offset[1] + roi[1]), int(kps[i * 2 + 1] * bh + self.offset[0] + roi[0])))
+            cv2.circle(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255), -1)
+        cv2.imshow('Detection', cv2.resize(splash, (1280, 960)))
+
+        absolute_kp_scaled = np.multiply(absolute_kp, 1 / self.scale)
+        detection = dict(score=r['scores'][0], abs_rect=(abs_xmin, abs_ymin, abs_xmax, abs_ymax),
+                         mask=np.sum(r['masks'],
                          -1, keepdims=False), keypoints=absolute_kp)
         self.detections.append(detection)
 
     def detect(self, frame, gt):
+        self.frame_shape = frame.shape[:2]
+
+        # print("self.bottom", self.bottom)
+        # print("self.offset", self.offset)
+        # print("self.frame_shape", self.frame_shape)
+        y_off = int(np.max((0, np.min((self.offset[0], self.frame_shape[0] - self.slice_size[0])))))
+        x_off = int(np.max((0, np.min((self.offset[1], self.frame_shape[1] - self.slice_size[1])))))
+        self.offset = (y_off, x_off)
         self.gt = gt
-        if self.frame_shape is None:
-            return
+        # if self.frame_shape is None:
+        #     return
         self.detections = []
         self.best_detection = None
-        if self.init_det:  # comment in 1280x960 resolution
+        if self.init_det and not self.bottom:  # comment in 1280x960 resolution
+            print("init_det")
             self.init_detection(frame)
         else:
         # self.offset = (1988, 2851)            #uncomment in 1280x960 resolution
+        #     print("frame.shape", frame.shape)
+        #     cv2.imshow("slice", self.get_slice(frame))
+        #     cv2.waitKey(1)
             self.get_CNN_output(self.get_slice(frame))
         if len(self.detections) == 0:
+            print("No detections")
             self.init_det = True
         else:
             self.init_det = False
             self.get_best_detections()
+            # if width < self.slice_size[1]/2 and height < self.slice_size[0]/2:
+            #     self.scale = 1.0
+            # else:
+            #     self.scale = min(self.slice_size[1]/width/2, self.slice_size[0]/height/2)
             # self.draw_detection(frame)
+        if self.best_detection is not None:
+            abs_xmin, abs_ymin, abs_xmax, abs_ymax = self.best_detection['abs_rect']
+            width = abs_xmax - abs_xmin
+            height = abs_ymax - abs_ymin
+            # print("width", width)
+            if width > self.slice_size[
+                1] * self.charger_to_slice_ratio:  # or height > self.slice_size[0]*self.charger_to_slice_ratio:
+                self.scale = self.scale * self.slice_size[
+                    1] / width * self.charger_to_slice_ratio  # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
+                print(self.scale)
+            if self.scale < 0.03:
+                self.bottom = True
+                # self.scale = 0.7
+                self.scale = 1.0
         return
 
-    def get_slice(self, frame):
+    def get_slice(self, frame, offset=None):
         # return cv2.resize(frame, self.slice_size)
-        print(self.offset, "offf")
+        if offset is not None:
+            return frame[offset[0]:offset[0] + self.slice_size[0],
+                   offset[1]:offset[1] + self.slice_size[1]]
         return frame[self.offset[0]:self.offset[0] + self.slice_size[0],
                      self.offset[1]:self.offset[1] + self.slice_size[1]]
 
     def init_detection(self, frame):
         small_frame = cv2.resize(frame, (self.slice_size[1], self.slice_size[0]))
+        # cv2.waitKey(10)
         width, height = self.detect_pole(small_frame)
-        print(self.offset)
+        if width > self.slice_size[
+            1] * self.charger_to_slice_ratio:  # or height > self.slice_size[0]*self.charger_to_slice_ratio:
+            self.scale = self.slice_size[
+                             1] / width * self.charger_to_slice_ratio  # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
+            frame = cv2.resize(frame, (0, 0), fx=self.scale, fy=self.scale)
+            self.frame_shape = frame.shape[:2]
+            self.offset = (int(self.offset[0] * self.scale), int(self.offset[1] * self.scale))
+        # print(self.offset)
         if width == 0:
             return
         try:
             cv2.imshow("pole", self.get_slice(frame))
             cv2.waitKey(10)
         except cv2.error:
-            print(self.offset)
-            print(self.get_slice(frame).shape)
-        if width < self.slice_size[1] and height < self.slice_size[0]:
-            self.get_CNN_output(self.get_slice(frame))
-        else:
-            cols = np.max((2, np.ceil(width / self.slice_size[1])))
-            rows = np.max((2, np.ceil(height / self.slice_size[0])))
-            # print("colsrows %f, %f", cols, rows)
-            y_start = self.offset[0]
-            x_start = self.offset[1]
-            y_step = self.slice_size[0] - int((rows * self.slice_size[0] - (self.offset[0] + height)) / (rows - 1))
-            x_step = self.slice_size[1] - int((cols * self.slice_size[1] - (self.offset[1] + width)) / (cols - 1))
-            for y_off in range(y_start, self.offset[0] + height - y_step, y_step):
-                for x_off in range(x_start, self.offset[1] + width - x_step, x_step):
-                    self.offset = (y_off, x_off)
-                    self.get_CNN_output(self.get_slice(frame))
-                    # cv2.imshow("pole", self.get_slice(frame))
-                    # cv2.waitKey(0)
+            print("self.get_slice(frame).shape", self.get_slice(frame).shape)
+        self.get_CNN_output(self.get_slice(frame))
+        # else:
+        #     self.scale = 1.0
+        # frame = cv2.resize(frame, (0, 0), fx=scale, fy=scale)
+        # offset = self.offset*scale
+
+        # cols = np.max((2, np.ceil(width / self.slice_size[1])))
+        # rows = np.max((2, np.ceil(height / self.slice_size[0])))
+        # # print("colsrows %f, %f", cols, rows)
+        # y_start = self.offset[0]
+        # x_start = self.offset[1]
+        # y_step = self.slice_size[0] - int((rows * self.slice_size[0] - (self.offset[0] + height)) / (rows - 1))
+        # x_step = self.slice_size[1] - int((cols * self.slice_size[1] - (self.offset[1] + width)) / (cols - 1))
+        # for y_off in range(y_start, self.offset[0] + height - y_step, y_step):
+        #     for x_off in range(x_start, self.offset[1] + width - x_step, x_step):
+        #         self.offset = (y_off, x_off)
+        #         self.get_CNN_output(self.get_slice(frame))
 
     def detect_pole(self, small_frame):
         image_np_expanded = np.expand_dims(small_frame, axis=0)
@@ -253,31 +315,44 @@ class Detector:
                                                                       feed_dict={image_tensor: image_np_expanded})
 
         # Visualization of the results of a detection.
-        rect_points, class_scores = draw_boxes_and_labels(
-            boxes=np.squeeze(boxes),
-            classes=np.squeeze(classes).astype(np.int32),
-            scores=np.squeeze(scores),
-            min_score_thresh=.1
-        )
+        # rect_points, class_scores = draw_boxes_and_labels(
+        #     boxes=np.squeeze(boxes),
+        #     classes=np.squeeze(classes).astype(np.int32),
+        #     scores=np.squeeze(scores),
+        #     min_score_thresh=.10
+        # )
+        boxes = np.squeeze(boxes)
+        scores = np.squeeze(scores)
+        boxes_dict = []
+        for box, score in zip(boxes, scores):
+            # print("box", box)
+            ymin, xmin, ymax, xmax = box
+            boxes_dict.append(dict(ymin=ymin, xmin=xmin, ymax=ymax, xmax=xmax, score=score))
+        # print("boxes", boxes)
+        # print("scores", scores)
 
         detections = []
-        for idx in range(len(rect_points)):
-            abs_xmin = int(rect_points[idx]['xmin'] * self.frame_shape[1])
-            abs_ymin = int(rect_points[idx]['ymin'] * self.frame_shape[0])
+        for idx in range(len(boxes_dict)):
+            abs_xmin = int(boxes_dict[idx]['xmin'] * self.frame_shape[1])
+            abs_ymin = int(boxes_dict[idx]['ymin'] * self.frame_shape[0])
             abs_xmax = np.min(
-                (int(rect_points[idx]['xmax'] * self.frame_shape[1]), self.frame_shape[1]))
+                (int(boxes_dict[idx]['xmax'] * self.frame_shape[1]), self.frame_shape[1]))
             abs_ymax = np.min(
-                (int(rect_points[idx]['ymax'] * self.frame_shape[0]), self.frame_shape[0]))
+                (int(boxes_dict[idx]['ymax'] * self.frame_shape[0]), self.frame_shape[0]))
             if abs_xmax <= abs_xmin or abs_ymax <= abs_ymin:
                 continue
-            detection = dict(rel_rect=rect_points[idx], score=class_scores[idx],
+            detection = dict(rel_rect=boxes_dict[idx], score=boxes_dict[idx]['score'],
                              abs_rect=(abs_xmin, abs_ymin, abs_xmax, abs_ymax))
             detections.append(detection)
 
         if len(detections) > 0:
             best_detection = sorted(detections, key=lambda k: k['score'], reverse=True)[0]
-            y_off = int(np.max((0, np.min((best_detection['abs_rect'][1], self.frame_shape[0])))))
-            x_off = int(np.max((0, np.min((best_detection['abs_rect'][0], self.frame_shape[1])))))
+            # print("best_detection", best_detection)
+            # print("self.frame_shape", self.frame_shape)
+            y_off = int(np.max((0, np.min(
+                (best_detection['abs_rect'][1] - self.slice_size[0] / 5, self.frame_shape[0] - self.slice_size[0])))))
+            x_off = int(np.max((0, np.min(
+                (best_detection['abs_rect'][0] - self.slice_size[1] / 5, self.frame_shape[1] - self.slice_size[1])))))
             self.offset = (y_off, x_off)
             self.init_det = False
             return (best_detection['abs_rect'][2] - best_detection['abs_rect'][0],
@@ -293,13 +368,16 @@ class Detector:
             self.detections[idx]['refined_score'] = ma_score + self.detections[idx]['score']
         self.best_detection = sorted(self.detections, key=lambda k: k['refined_score'], reverse=True)[0]
         x1, y1, x2, y2 = self.best_detection['abs_rect']
-        y_off = int(np.min((np.max((0, y1 - self.slice_size[0] / 2)), self.frame_shape[0])))
-        x_off = int(np.min((np.max((0, x1 - self.slice_size[1] / 2)), self.frame_shape[1])))
+        # y_off = int(np.min((np.max((0, y1 - self.slice_size[0] / 2)), self.frame_shape[0])))
+        # x_off = int(np.min((np.max((0, x1 - self.slice_size[1] / 2)), self.frame_shape[1])))
         mask = self.best_detection['mask'].astype(np.uint8)
-        print(self.best_detection['mask'].shape, 'lool')
+        # print(self.best_detection['mask'].shape, 'lool')
         # mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
         self.mask_reshaped = mask # cv2.resize(mask, dsize=(x2 - x1, y2 - y1))
+        y_off = int(np.max((0, np.min((y1 - self.slice_size[0] / 5, self.frame_shape[0] - self.slice_size[0])))))
+        x_off = int(np.max((0, np.min((x1 - self.slice_size[1] / 5, self.frame_shape[1] - self.slice_size[1])))))
         self.offset = (y_off, x_off)
+        return (x2 - x1, y2 - y1)
 
     def draw_detection(self, frame):
         x1, y1, x2, y2 = self.best_detection['abs_rect']

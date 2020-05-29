@@ -9,8 +9,9 @@ import math
 import numpy as np
 import rospy
 import matplotlib.pyplot as plt
+from scipy.spatial.transform import Rotation
 
-
+np.set_printoptions(linewidth=np.inf)
 class PoseEstimator:
 
     def __init__(self, camera_matrix):
@@ -30,6 +31,8 @@ class PoseEstimator:
         self.PnP_dist = None
         self.GPS_dist = None
         self.posecnn_dist = None
+        self.last_tvec = np.array([0.0, 0.0, 40.0])
+        self.last_rvec = np.array([0.0, 0.0, 0.0])
         # with open(self.gps_data_file, newline='') as csvfile:
         #     gps_reader = csv.reader(csvfile)
         #     row = next(gps_reader)
@@ -291,47 +294,61 @@ class PoseEstimator:
         cv2.imshow("imgs", cv2.resize(frame, (1280, 960)))
         return imagePoints
 
-    def calc_PnP_pose(self, imagePoints):
-        print("imagePoints", np.array(imagePoints).astype(np.int16))
+    def calc_PnP_pose(self, imagePoints, camera_matrix):
+        lol = imagePoints
+        # print("imagePoints", lol.astype(np.int16).flatten())
         if imagePoints is None and len(imagePoints) > 0:
             return None
-        if len(imagePoints) == 6:
-            PnP_image_points = imagePoints[:4]  # [imagePoints[0], imagePoints[3], imagePoints[2], imagePoints[1]]
-            # PnP_image_points =[(imagePoints[0][1], imagePoints[0][0]), (imagePoints[1][1], imagePoints[1][0]),
-            #                    (imagePoints[2][1], imagePoints[2][0]), (imagePoints[3][1], imagePoints[3][0])]
+        if len(imagePoints) == 8:
+            PnP_image_points = [imagePoints[0], imagePoints[1], imagePoints[2], imagePoints[3], imagePoints[5],
+                                imagePoints[6]]
             # object_points = np.array([(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(np.float64)
             object_points = np.array(
-                [(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(
-                np.float64) * 0.99
+                [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
+                 # ]).astype(np.float64)
+                 (2.80, -0.91, -0.09), (-0.1, -0.755, -0.09)]).astype(np.float64)
             # object_points = np.array([(-0.32, 0.31, 0.0), (-0.075, 0.075, 0.0), (0.075, 0.075, 0.0), (0.32, 0.31, 0.0)]).astype(np.float64) #*1.165 #A8 front
             # print(object_points)
             # object_points = np.array([(-0.31, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.31, 0, -0.65)]).astype(np.float64)
-        elif len(imagePoints) == 4:
+        elif len(imagePoints) == 7:
             PnP_image_points = imagePoints
             # object_points = np.array([(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(np.float64)
-            object_points = np.array([[-1.38, -0.19, 0.65], [1.38, -0.19, 0.65], [1.38, 1.81, 0.0], [-1.38, 1.81, 0.0]],
-                                     dtype=np.float32) * 0.965
-        elif len(imagePoints) == 8:
-            # PnP_image_points = imagePoints[:4]
-            # object_points = np.array([(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(np.float64)
-            PnP_image_points = imagePoints
             object_points = np.array(
                 [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
-                 (0.32, 0.0, 0.65), (0.075, -0.255, 0.65), (-0.075, -0.255, 0.65), (-0.32, 0.0, 0.65)]).astype(
-                np.float64)
+                 # ]).astype(np.float64)
+                 (2.80, -0.91, -0.09), (-0.1, -0.755, -0.09), (2.775, 0.72, -0.09)]).astype(np.float64)
+        elif len(imagePoints) == 4:
+            PnP_image_points = imagePoints
+            object_points = np.array(
+                [(-0.385, 0, -0.65), (0.385, 0, -0.65), (0.385, 0, 0.65), (-0.385, 0, 0.65)]).astype(np.float64)
+            # object_points = np.array([[-1.38, -0.19, 0.65], [1.38, -0.19, 0.65], [1.38, 1.81, 0.0], [-1.38, 1.81, 0.0]],
+            #                          dtype=np.float32)
+        # elif len(imagePoints) == 8:
+            # PnP_image_points = imagePoints[:4]
+            # object_points = np.array([(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(np.float64)
+        # PnP_image_points = imagePoints
+        # object_points = np.array(
+        #     [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
+        #      (0.32, 0.0, 0.65), (0.075, -0.255, 0.65), (-0.075, -0.255, 0.65), (-0.32, 0.0, 0.65)]).astype(
+        #     np.float64)
         # object_points = np.array([(0, 0, 0), (0.64, 0, 0), (0.395, -0.255, 0), (0.245, -0.255, 0)]).astype(np.float64)
         # object_points = np.array([(0, 0, 0), (0.61, 0, 0), (0.38, -0.255, 0), (0.23, -0.255, 0)]).astype(np.float64)
         PnP_image_points = np.array(PnP_image_points).astype(np.float64)
-        if self.PnP_pose_data is not None:
-            init_guess = np.array(self.PnP_pose_data)
-        else:
-            init_guess = np.array([0.0, 0.5, 30.0])
-        retval, rvec, tvec = cv2.solvePnP(object_points, PnP_image_points, self.camera_matrix,
-                                          distCoeffs=(-0.10112, 0.07739, -0.00447, -0.0070),
-                                          rvec=np.array([0.0, 0.0, 0.0]))
+        # if self.PnP_pose_data is not None:
+        #     init_guess = np.array(self.PnP_pose_data)
+        # else:
+        #     init_guess = np.array([0.0, 0.5, 30.0])
+        retval, rvec, tvec = cv2.solvePnP(object_points, PnP_image_points, camera_matrix,
+                                          distCoeffs=None,
+                                          # tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_ITERATIVE)
+                                          tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_EPNP)
         # retval, rvec, tvec, inliers = cv2.solvePnPRansac(object_points, PnP_image_points, self.camera_matrix,
-        #                                                  iterationsCount=10000, distCoeffs=(-0.10112, 0.07739, 0.00447, -0.00070, 0.00000))
-        # print('TVEC', tvec)
-        # print('RVEC', rvec)
+        #                                                  distCoeffs=(-0.11286,   0.11138,   0.00195,   -0.00166))
+        rot = Rotation.from_rotvec(rvec)
+        # tvec = -tvec
+        print('TVEC', tvec)
+        print('RVEC', rvec, rot.as_euler('xyz') * 180 / 3.14)
         self.PnP_pose_data = tvec
+        self.last_tvec = tvec
+        self.last_rvec = rvec
         return tvec, rvec

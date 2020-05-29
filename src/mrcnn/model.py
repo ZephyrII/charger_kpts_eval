@@ -207,6 +207,215 @@ def resnet_graph(input_image, architecture, stage5=False, train_bn=True):
 
 
 ############################################################
+#  Inception Resnet v2 Graph
+############################################################
+def conv2d_bn(x,
+              filters,
+              kernel_size,
+              strides=1,
+              padding='same',
+              activation='relu',
+              use_bias=False,
+              name=None):
+    """Utility function to apply conv + BN.
+
+    # Arguments
+        x: input tensor.
+        filters: filters in `Conv2D`.
+        kernel_size: kernel size as in `Conv2D`.
+        padding: padding mode in `Conv2D`.
+        activation: activation in `Conv2D`.
+        strides: strides in `Conv2D`.
+        name: name of the ops; will become `name + '_ac'` for the activation
+            and `name + '_bn'` for the batch norm layer.
+
+    # Returns
+        Output tensor after applying `Conv2D` and `BatchNormalization`.
+    """
+    x = KL.Conv2D(filters,
+                  kernel_size,
+                  strides=strides,
+                  padding=padding,
+                  use_bias=use_bias,
+                  name=name)(x)
+    if not use_bias:
+        bn_axis = 1 if K.image_data_format() == 'channels_first' else 3
+        bn_name = None if name is None else name + '_bn'
+        x = KL.BatchNormalization(axis=bn_axis, scale=False, name=bn_name)(x)
+    if activation is not None:
+        ac_name = None if name is None else name + '_ac'
+        x = KL.Activation(activation, name=ac_name)(x)
+    return x
+
+
+def inception_resnet_block(x, scale, block_type, block_idx, activation='relu'):
+    """Adds a Inception-ResNet block.
+
+    This function builds 3 types of Inception-ResNet blocks mentioned
+    in the paper, controlled by the `block_type` argument (which is the
+    block name used in the official TF-slim implementation):
+        - Inception-ResNet-A: `block_type='block35'`
+        - Inception-ResNet-B: `block_type='block17'`
+        - Inception-ResNet-C: `block_type='block8'`
+
+    # Arguments
+        x: input tensor.
+        scale: scaling factor to scale the residuals (i.e., the output of
+            passing `x` through an inception module) before adding them
+            to the shortcut branch. Let `r` be the output from the residual branch,
+            the output of this block will be `x + scale * r`.
+        block_type: `'block35'`, `'block17'` or `'block8'`, determines
+            the network structure in the residual branch.
+        block_idx: an `int` used for generating layer names. The Inception-ResNet blocks
+            are repeated many times in this network. We use `block_idx` to identify
+            each of the repetitions. For example, the first Inception-ResNet-A block
+            will have `block_type='block35', block_idx=0`, ane the layer names will have
+            a common prefix `'block35_0'`.
+        activation: activation function to use at the end of the block
+            (see [activations](keras./activations.md)).
+            When `activation=None`, no activation is applied
+            (i.e., "linear" activation: `a(x) = x`).
+
+    # Returns
+        Output tensor for the block.
+
+    # Raises
+        ValueError: if `block_type` is not one of `'block35'`,
+            `'block17'` or `'block8'`.
+    """
+    if block_type == 'block35':
+        branch_0 = conv2d_bn(x, 32, 1)
+        branch_1 = conv2d_bn(x, 32, 1)
+        branch_1 = conv2d_bn(branch_1, 32, 3)
+        branch_2 = conv2d_bn(x, 32, 1)
+        branch_2 = conv2d_bn(branch_2, 48, 3)
+        branch_2 = conv2d_bn(branch_2, 64, 3)
+        branches = [branch_0, branch_1, branch_2]
+    elif block_type == 'block17':
+        branch_0 = conv2d_bn(x, 192, 1)
+        branch_1 = conv2d_bn(x, 128, 1)
+        branch_1 = conv2d_bn(branch_1, 160, [1, 7])
+        branch_1 = conv2d_bn(branch_1, 192, [7, 1])
+        branches = [branch_0, branch_1]
+    elif block_type == 'block8':
+        branch_0 = conv2d_bn(x, 192, 1)
+        branch_1 = conv2d_bn(x, 192, 1)
+        branch_1 = conv2d_bn(branch_1, 224, [1, 3])
+        branch_1 = conv2d_bn(branch_1, 256, [3, 1])
+        branches = [branch_0, branch_1]
+    else:
+        raise ValueError('Unknown Inception-ResNet block type. '
+                         'Expects "block35", "block17" or "block8", '
+                         'but got: ' + str(block_type))
+
+    block_name = block_type + '_' + str(block_idx)
+    channel_axis = 1 if K.image_data_format() == 'channels_first' else 3
+    mixed = KL.Concatenate(axis=channel_axis, name=block_name + '_mixed')(branches)
+    up = conv2d_bn(mixed,
+                   K.int_shape(x)[channel_axis],
+                   1,
+                   activation=None,
+                   use_bias=True,
+                   name=block_name + '_conv')
+
+    x = KL.Lambda(lambda inputs, scale: inputs[0] + inputs[1] * scale,
+                  output_shape=K.int_shape(x)[1:],
+                  arguments={'scale': scale},
+                  name=block_name)([x, up])
+    if activation is not None:
+        x = KL.Activation(activation, name=block_name + '_ac')(x)
+    return x
+
+
+def inc_resnet_graph(input_image, architecture, stage5=False, train_bn=True):
+    # # Determine proper input shape
+    # input_shape = _obtain_input_shape(
+    #     input_shape,
+    #     default_size=299,
+    #     min_size=139,
+    #     data_format=K.image_data_format(),
+    #     require_flatten=False,
+    #     weights=weights)
+
+    # Stem block: 35 x 35 x 192
+    C1 = x = conv2d_bn(input_image, 32, 3, strides=2, padding='valid')
+    x = conv2d_bn(x, 32, 3, padding='valid')
+    x = conv2d_bn(x, 64, 3)
+    x = KL.MaxPooling2D(3, strides=2)(x)
+    x = conv2d_bn(x, 80, 1, padding='valid')
+    x = conv2d_bn(x, 192, 3, padding='valid')
+    C2 = KL.ZeroPadding2D(2)(x)
+    x = KL.MaxPooling2D(3, strides=2)(x)
+
+    # Mixed 5b (Inception-A block): 35 x 35 x 320
+    branch_0 = conv2d_bn(x, 96, 1)
+    branch_1 = conv2d_bn(x, 48, 1)
+    branch_1 = conv2d_bn(branch_1, 64, 5)
+    branch_2 = conv2d_bn(x, 64, 1)
+    branch_2 = conv2d_bn(branch_2, 96, 3)
+    branch_2 = conv2d_bn(branch_2, 96, 3)
+    branch_pool = KL.AveragePooling2D(3, strides=1, padding='same')(x)
+    branch_pool = conv2d_bn(branch_pool, 64, 1)
+    branches = [branch_0, branch_1, branch_2, branch_pool]
+    channel_axis = 1 if K.image_data_format() == 'channels_first' else 3
+    x = KL.Concatenate(axis=channel_axis, name='mixed_5b')(branches)
+
+    # 10x block35 (Inception-ResNet-A block): 35 x 35 x 320
+    for block_idx in range(1, 11):
+        x = inception_resnet_block(x,
+                                   scale=0.17,
+                                   block_type='block35',
+                                   block_idx=block_idx)
+
+    # Mixed 6a (Reduction-A block): 17 x 17 x 1088
+    C3 = KL.ZeroPadding2D(((2, 1), (2, 1)))(x)
+    branch_0 = conv2d_bn(x, 384, 3, strides=2, padding='valid')
+    branch_1 = conv2d_bn(x, 256, 1)
+    branch_1 = conv2d_bn(branch_1, 256, 3)
+    branch_1 = conv2d_bn(branch_1, 384, 3, strides=2, padding='valid')
+    branch_pool = KL.MaxPooling2D(3, strides=2, padding='valid')(x)
+    branches = [branch_0, branch_1, branch_pool]
+    x = KL.Concatenate(axis=channel_axis, name='mixed_6a')(branches)
+
+    # 20x block17 (Inception-ResNet-B block): 17 x 17 x 1088
+    for block_idx in range(1, 21):
+        x = inception_resnet_block(x,
+                                   scale=0.1,
+                                   block_type='block17',
+                                   block_idx=block_idx)
+
+    # Mixed 7a (Reduction-B block): 8 x 8 x 2080
+    C4 = KL.ZeroPadding2D(((1, 1)))(x)
+    branch_0 = conv2d_bn(x, 256, 1)
+    branch_0 = conv2d_bn(branch_0, 384, 3, strides=2, padding='valid')
+    branch_1 = conv2d_bn(x, 256, 1)
+    branch_1 = conv2d_bn(branch_1, 288, 3, strides=2, padding='valid')
+    branch_2 = conv2d_bn(x, 256, 1)
+    branch_2 = conv2d_bn(branch_2, 288, 3)
+    branch_2 = conv2d_bn(branch_2, 320, 3, strides=2, padding='valid')
+    branch_pool = KL.MaxPooling2D(3, strides=2, padding='valid')(x)
+    branches = [branch_0, branch_1, branch_2, branch_pool]
+    x = KL.Concatenate(axis=channel_axis, name='mixed_7a')(branches)
+
+    # 10x block8 (Inception-ResNet-C block): 8 x 8 x 2080
+    for block_idx in range(1, 10):
+        x = inception_resnet_block(x,
+                                   scale=0.2,
+                                   block_type='block8',
+                                   block_idx=block_idx)
+    x = inception_resnet_block(x,
+                               scale=1.,
+                               activation=None,
+                               block_type='block8',
+                               block_idx=10)
+
+    # Final convolution block: 8 x 8 x 1536
+    x = conv2d_bn(x, 1536, 1, name='conv_7b')
+    C5 = KL.ZeroPadding2D(((1, 1)))(x)
+    return [C1, C2, C3, C4, C5]
+
+
+############################################################
 #  Proposal Layer
 ############################################################
 
@@ -1048,24 +1257,34 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
+    # x = KL.Dropout(0.5)(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_kp_conv2")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn2')(x, training=train_bn)
     x = KL.Activation('relu')(x)
+    # x = KL.Dropout(0.5)(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_kp_conv3")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn3')(x, training=train_bn)
     x = KL.Activation('relu')(x)
+    # x = KL.Dropout(0.5)(x)
 
     x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
                            name="mrcnn_kp_conv4")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
+
+    # x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"), #added
+    #                        name="mrcnn_kp_conv5")(x)
+    # x = KL.TimeDistributed(BatchNorm(),                             #added
+    #                        name='mrcnn_kp_bn5')(x, training=train_bn)
+    # x = KL.Activation('relu')(x)
+    # x = KL.Dropout(0.5)(x)
 
     x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
                            name="mrcnn_kp_deconv")(x)
@@ -1161,6 +1380,8 @@ def rpn_class_loss_graph(rpn_match, rpn_class_logits):
     # but neutral anchors (match value = 0) don't.
     indices = tf.where(K.not_equal(rpn_match, 0))
     # Pick rows that contribute to the loss and filter out the rest.
+    print("XDD", indices)
+    print(rpn_class_logits)
     rpn_class_logits = tf.gather_nd(rpn_class_logits, indices)
     anchor_class = tf.gather_nd(anchor_class, indices)
     # Cross entropy loss
@@ -2057,11 +2278,15 @@ class MaskRCNN():
         else:
             _, C2, C3, C4, C5 = resnet_graph(input_image, config.BACKBONE,
                                              stage5=True, train_bn=config.TRAIN_BN)
+        #
+        # _, C2, C3, C4, C5 = inc_resnet_graph(input_image, config.BACKBONE,
+        #                                  stage5=True, train_bn=config.TRAIN_BN)
         # Top-down Layers
         # TODO: add assert to varify feature map sizes match what's in config
         P5 = KL.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (1, 1), name='fpn_c5p5')(C5)
         P4 = KL.Add(name="fpn_p4add")([
             KL.UpSampling2D(size=(2, 2), name="fpn_p5upsampled")(P5),
+            # P5,
             KL.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (1, 1), name='fpn_c4p4')(C4)])
         P3 = KL.Add(name="fpn_p3add")([
             KL.UpSampling2D(size=(2, 2), name="fpn_p4upsampled")(P4),
@@ -2343,6 +2568,18 @@ class MaskRCNN():
                                 TF_WEIGHTS_PATH_NO_TOP,
                                 cache_subdir='models',
                                 md5_hash='a268eb855778b3df3c7506639542a6af')
+        return weights_path
+
+    def get_imagenet_inc_res_weights(self):
+        """Downloads ImageNet trained weights from Keras.
+        Returns path to weights file.
+        """
+        from keras.utils.data_utils import get_file
+        TF_WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.7/inception_resnet_v2_weights_tf_dim_ordering_tf_kernels_notop.h5'
+        weights_path = get_file('inception_resnet_v2_weights_tf_dim_ordering_tf_kernels_notop.h5',
+                                TF_WEIGHTS_PATH_NO_TOP,
+                                cache_subdir='models',
+                                md5_hash='d19885ff4a710c122648d3b5c3b684e4')
         return weights_path
 
     def compile(self, learning_rate, momentum):

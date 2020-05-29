@@ -51,6 +51,10 @@ from mrcnn import model as modellib, utils
 COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
+
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
 ############################################################
 #  Configurations
 ############################################################
@@ -61,10 +65,10 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 270
+    STEPS_PER_EPOCH = 1800
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.001
-    NUM_POINTS = 6
+    LEARNING_RATE = 0.000001
+    NUM_POINTS = 7
 
 
 ############################################################
@@ -161,7 +165,9 @@ class ChargerDataset(utils.Dataset):
         root = tree.getroot()
         theta = 0
         for obj in root.findall('object'):
-            theta = float(obj.find('theta').text)
+            thetaxml = obj.find('theta')
+            if thetaxml is not None:
+                theta = float(thetaxml.text)
         return (theta + 1) / 2
 
     def image_reference(self, image_id):
@@ -222,7 +228,7 @@ def train(model):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=100,
+                epochs=300,
                 layers='heads')
 
 
@@ -410,6 +416,7 @@ if __name__ == '__main__':
     elif args.weights.lower() == "imagenet":
         # Start from ImageNet trained weights
         weights_path = model.get_imagenet_weights()
+        # weights_path = model.get_imagenet_inc_res_weights()
     else:
         weights_path = args.weights
 
