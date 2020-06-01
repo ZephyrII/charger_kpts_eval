@@ -171,9 +171,9 @@ class ChargerDataset(utils.Dataset):
         return (theta + 1) / 2
 
     def load_bbox(self, image_id):
-
         info = self.image_info[image_id]
         ann_fname = info['annotation']
+        # print(ann_fname)
         tree = ET.parse(ann_fname)
         root = tree.getroot()
         size = root.find('size')
@@ -186,7 +186,8 @@ class ChargerDataset(utils.Dataset):
                 ymin = int(float(bndboxxml.find('ymin').text) * h)
                 xmax = int(float(bndboxxml.find('xmax').text) * w)
                 ymax = int(float(bndboxxml.find('ymax').text) * h)
-        return (xmin, ymin, xmax, ymax)
+
+        return xmin, ymin, xmax, ymax
 
     def image_reference(self, image_id):
         """Return the path of the image."""

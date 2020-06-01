@@ -1573,7 +1573,7 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     kp = dataset.load_kp(image_id, config.NUM_POINTS)
     yaw = dataset.load_yaw(image_id)
     xmin, ymin, xmax, ymax = dataset.load_bbox(image_id)
-    bbox = np.array([[ymin, xmin, ymax, xmax], [ymin, xmin, ymax, xmax], [ymin, xmin, ymax, xmax]])
+    bbox = np.array([[ymin, xmin, ymax, xmax]])
     # mask, class_ids, kp = dataset.query_gt(image_id)
 
 
@@ -1585,6 +1585,13 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
         max_dim=config.IMAGE_MAX_DIM,
         mode=config.IMAGE_RESIZE_MODE)
     mask = utils.resize_mask(mask, scale, padding, crop)
+    bbox = bbox * scale
+    top_pad = (config.IMAGE_MAX_DIM - 720) // 2
+    bbox = np.array([[bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax],
+                     [bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax],
+                     [bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax]])
+
+
 
     # Random horizontal flips.
     # TODO: will be removed in a future update in favor of augmentation

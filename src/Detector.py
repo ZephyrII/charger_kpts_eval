@@ -196,7 +196,7 @@ class Detector:
             (int(roi[3] + self.offset[1]), self.frame_shape[1]))
         abs_ymax = np.min(
             (int(roi[2] + self.offset[0]), self.frame_shape[0]))
-        print(splash.shape, abs_xmin, abs_ymin, abs_xmax, "xd")
+        print(splash.shape, abs_xmin, abs_ymin, abs_xmax, roi, "xd")
         for i in range(int(len(kps) / 2)):
             absolute_kp.append(
                 (int(kps[i * 2] * bw + self.offset[1] + roi[1]), int(kps[i * 2 + 1] * bh + self.offset[0] + roi[0])))

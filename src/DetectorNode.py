@@ -37,8 +37,8 @@ class DetectorNode:
         rospy.init_node('deep_pose_estimator', log_level=rospy.DEBUG)
         path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         # path_to_model_bottom = "/root/share/tf/Keras/15_05_bottom_PP_augg_inc"
-        # path_to_model = "/root/share/tf/Keras/28_05_PP_7"
-        path_to_model = "/root/share/tf/Keras/27_05_PP"
+        path_to_model = "/root/share/tf/Keras/1_06_PP_7"
+        # path_to_model = "/root/share/tf/Keras/27_05_PP"
         # path_to_model = "/root/share/tf/Keras/22_05_PP_aug4_2112"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
         self.equalize_histogram = False
