@@ -186,6 +186,7 @@ class Detector:
             return
         kps = r['kp'][0][0]
         roi = r['rois'][0]
+        # roi[2] = roi[2]+roi[2]-roi[0]
         bw = roi[3] - roi[1]
         bh = roi[2] - roi[0]
         absolute_kp = []
@@ -195,17 +196,18 @@ class Detector:
             (int(roi[3] + self.offset[1]), self.frame_shape[1]))
         abs_ymax = np.min(
             (int(roi[2] + self.offset[0]), self.frame_shape[0]))
-        # print(roi[0], image_np.shape[0], self.offset[0], "xd")
+        print(splash.shape, abs_xmin, abs_ymin, abs_xmax, "xd")
         for i in range(int(len(kps) / 2)):
             absolute_kp.append(
                 (int(kps[i * 2] * bw + self.offset[1] + roi[1]), int(kps[i * 2 + 1] * bh + self.offset[0] + roi[0])))
             cv2.circle(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255), -1)
+        cv2.rectangle(splash, (int(roi[1]), int(roi[0])), (int(roi[3]), int(roi[2])), (0, 255, 255), 2)
         cv2.imshow('Detection', cv2.resize(splash, (1280, 960)))
 
         absolute_kp_scaled = np.multiply(absolute_kp, 1 / self.scale)
         detection = dict(score=r['scores'][0], abs_rect=(abs_xmin, abs_ymin, abs_xmax, abs_ymax),
                          mask=np.sum(r['masks'],
-                         -1, keepdims=False), keypoints=absolute_kp)
+                                     -1, keepdims=False), keypoints=absolute_kp)
         self.detections.append(detection)
 
     def detect(self, frame, gt):

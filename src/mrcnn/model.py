@@ -247,7 +247,6 @@ def conv2d_bn(x,
         x = KL.Activation(activation, name=ac_name)(x)
     return x
 
-
 def inception_resnet_block(x, scale, block_type, block_idx, activation='relu'):
     """Adds a Inception-ResNet block.
 
@@ -326,8 +325,8 @@ def inception_resnet_block(x, scale, block_type, block_idx, activation='relu'):
         x = KL.Activation(activation, name=block_name + '_ac')(x)
     return x
 
-
 def inc_resnet_graph(input_image, architecture, stage5=False, train_bn=True):
+
     # # Determine proper input shape
     # input_shape = _obtain_input_shape(
     #     input_shape,
@@ -336,6 +335,7 @@ def inc_resnet_graph(input_image, architecture, stage5=False, train_bn=True):
     #     data_format=K.image_data_format(),
     #     require_flatten=False,
     #     weights=weights)
+
 
     # Stem block: 35 x 35 x 192
     C1 = x = conv2d_bn(input_image, 32, 3, strides=2, padding='valid')
@@ -1572,6 +1572,8 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     mask, class_ids = dataset.load_mask(image_id)
     kp = dataset.load_kp(image_id, config.NUM_POINTS)
     yaw = dataset.load_yaw(image_id)
+    xmin, ymin, xmax, ymax = dataset.load_bbox(image_id)
+    bbox = np.array([[ymin, xmin, ymax, xmax], [ymin, xmin, ymax, xmax], [ymin, xmin, ymax, xmax]])
     # mask, class_ids, kp = dataset.query_gt(image_id)
 
 
@@ -1631,7 +1633,9 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     # Bounding boxes. Note that some boxes might be all zeros
     # if the corresponding mask got cropped out.
     # bbox: [num_instances, (y1, x1, y2, x2)]
-    bbox = utils.extract_bboxes(mask)
+    # print("xddc", bbox)
+    # bbox = utils.extract_bboxes(mask)
+    # print("xdd", bbox)
 
     # Active classes
     # Different datasets have different classes, so track the

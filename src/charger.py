@@ -67,7 +67,7 @@ class chargerConfig(Config):
     NUM_CLASSES = 1 + 1  # Background + charger
     STEPS_PER_EPOCH = 1800
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.000001
+    LEARNING_RATE = 0.0001
     NUM_POINTS = 7
 
 
@@ -169,6 +169,24 @@ class ChargerDataset(utils.Dataset):
             if thetaxml is not None:
                 theta = float(thetaxml.text)
         return (theta + 1) / 2
+
+    def load_bbox(self, image_id):
+
+        info = self.image_info[image_id]
+        ann_fname = info['annotation']
+        tree = ET.parse(ann_fname)
+        root = tree.getroot()
+        size = root.find('size')
+        w = int(size.find('width').text)
+        h = int(size.find('height').text)
+        for obj in root.findall('object'):
+            bndboxxml = obj.find('bndbox')
+            if bndboxxml is not None:
+                xmin = int(float(bndboxxml.find('xmin').text) * w)
+                ymin = int(float(bndboxxml.find('ymin').text) * h)
+                xmax = int(float(bndboxxml.find('xmax').text) * w)
+                ymax = int(float(bndboxxml.find('ymax').text) * h)
+        return (xmin, ymin, xmax, ymax)
 
     def image_reference(self, image_id):
         """Return the path of the image."""
