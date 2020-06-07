@@ -194,8 +194,8 @@ class Config(object):
         "rpn_bbox_loss": 1.,
         "mrcnn_class_loss": 1.,
         "mrcnn_bbox_loss": 1.,
-        "mrcnn_mask_loss": 1.,
-        "mrcnn_kp_loss": 500.,
+        "mrcnn_mask_loss": 0.,
+        "mrcnn_kp_loss": 1000.,
         "mrcnn_yaw_loss": 0.
     }
 

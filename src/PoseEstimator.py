@@ -306,38 +306,23 @@ class PoseEstimator:
             object_points = np.array(
                 [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
                  # ]).astype(np.float64)
-                 (2.80, -0.91, -0.09), (-0.1, -0.755, -0.09)]).astype(np.float64)
-            # object_points = np.array([(-0.32, 0.31, 0.0), (-0.075, 0.075, 0.0), (0.075, 0.075, 0.0), (0.32, 0.31, 0.0)]).astype(np.float64) #*1.165 #A8 front
-            # print(object_points)
-            # object_points = np.array([(-0.31, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.31, 0, -0.65)]).astype(np.float64)
+                 (2.80, -0.91, -0.1), (-0.1, -0.755, -0.1)]).astype(np.float64)
         elif len(imagePoints) == 7:
             PnP_image_points = imagePoints
-            # object_points = np.array([(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(np.float64)
             object_points = np.array(
                 [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
-                 # ]).astype(np.float64)
-                 (2.80, -0.91, -0.09), (-0.1, -0.755, -0.09), (2.775, 0.72, -0.09)]).astype(np.float64)
+                 (2.80, -0.91, -0.1), (-0.1, -0.755, -0.1), (2.775, 0.72, -0.1)]).astype(np.float64)
+        elif len(imagePoints) == 5:
+            PnP_image_points = imagePoints
+            object_points = np.array(
+                [(-0.32, 0.0, -0.65), (0.32, 0.0, -0.65), (2.80, -0.91, -0.1), (-0.1, -0.755, -0.1),
+                 (2.775, 0.72, -0.1)]).astype(np.float64)
         elif len(imagePoints) == 4:
             PnP_image_points = imagePoints
             object_points = np.array(
                 [(-0.385, 0, -0.65), (0.385, 0, -0.65), (0.385, 0, 0.65), (-0.385, 0, 0.65)]).astype(np.float64)
-            # object_points = np.array([[-1.38, -0.19, 0.65], [1.38, -0.19, 0.65], [1.38, 1.81, 0.0], [-1.38, 1.81, 0.0]],
-            #                          dtype=np.float32)
-        # elif len(imagePoints) == 8:
-            # PnP_image_points = imagePoints[:4]
-            # object_points = np.array([(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(np.float64)
-        # PnP_image_points = imagePoints
-        # object_points = np.array(
-        #     [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
-        #      (0.32, 0.0, 0.65), (0.075, -0.255, 0.65), (-0.075, -0.255, 0.65), (-0.32, 0.0, 0.65)]).astype(
-        #     np.float64)
-        # object_points = np.array([(0, 0, 0), (0.64, 0, 0), (0.395, -0.255, 0), (0.245, -0.255, 0)]).astype(np.float64)
-        # object_points = np.array([(0, 0, 0), (0.61, 0, 0), (0.38, -0.255, 0), (0.23, -0.255, 0)]).astype(np.float64)
         PnP_image_points = np.array(PnP_image_points).astype(np.float64)
-        # if self.PnP_pose_data is not None:
-        #     init_guess = np.array(self.PnP_pose_data)
-        # else:
-        #     init_guess = np.array([0.0, 0.5, 30.0])
+
         retval, rvec, tvec = cv2.solvePnP(object_points, PnP_image_points, camera_matrix,
                                           distCoeffs=None,
                                           # tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_ITERATIVE)

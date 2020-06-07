@@ -87,7 +87,7 @@ class ChargerConfig(Config):
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
     # LEARNING_RATE = 0.001
-    NUM_POINTS = 7
+    NUM_POINTS = 5
 
 class Detector:
 
@@ -254,7 +254,7 @@ class Detector:
                 self.scale = self.scale * self.slice_size[
                     1] / width * self.charger_to_slice_ratio  # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
                 print(self.scale)
-            if self.scale < 0.03:
+            if self.scale < 0.2:
                 self.bottom = True
                 # self.scale = 0.7
                 self.scale = 1.0

@@ -19,8 +19,9 @@ import time
 from sklearn.mixture import BayesianGaussianMixture
 from sklearn.decomposition import PCA
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 class DetectorNode:
     def __init__(self):
@@ -37,7 +38,7 @@ class DetectorNode:
         rospy.init_node('deep_pose_estimator', log_level=rospy.DEBUG)
         path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         # path_to_model_bottom = "/root/share/tf/Keras/15_05_bottom_PP_augg_inc"
-        path_to_model = "/root/share/tf/Keras/1_06_PP_7"
+        path_to_model = "/root/share/tf/Keras/4_06_PP_5"
         # path_to_model = "/root/share/tf/Keras/27_05_PP"
         # path_to_model = "/root/share/tf/Keras/22_05_PP_aug4_2112"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
@@ -67,9 +68,9 @@ class DetectorNode:
         self.frames_sent_to_detector = 0
         self.detected_frames = 0
 
-        self.pointgrey_frame_shape = self.get_image_shape(self.pointgrey_topic)
+        self.pointgrey_frame_shape = (720, 960)  # self.get_image_shape(self.pointgrey_topic)
         self.frame_shape = self.get_image_shape(self.blackfly_topic)
-        self.detector = Detector(path_to_model, path_to_pole_model)  # , path_to_model_bottom=path_to_model_bottom)
+        self.detector = Detector(path_to_model, path_to_pole_model, path_to_model_bottom=path_to_model_bottom)
         self.detector.init_size(self.frame_shape)
         # self.detector.init_size((5000,5000))
         self.pose_estimator = PoseEstimator(self.blackfly_camera_matrix)
@@ -86,7 +87,7 @@ class DetectorNode:
         rospy.Subscriber(self.pointgrey_topic, CompressedImage, self.update_pointgrey_image, queue_size=1)
         rospy.Subscriber(self.imu_topic, Imu, self.get_pitch, queue_size=1)
         rospy.Subscriber(self.gt_pose_topic, PoseStamped, self.update_gt, queue_size=1)
-        rospy.wait_for_message(self.pointgrey_topic, CompressedImage)
+        # rospy.wait_for_message(self.pointgrey_topic, CompressedImage)
         rospy.wait_for_message(self.blackfly_topic, CompressedImage)
         while not rospy.is_shutdown():
             if self.image is not None and self.pointgrey_image is not None:
