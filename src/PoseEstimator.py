@@ -33,6 +33,8 @@ class PoseEstimator:
         self.posecnn_dist = None
         self.last_tvec = np.array([0.0, 0.0, 40.0])
         self.last_rvec = np.array([0.0, 0.0, 0.0])
+        lastR = Rotation.from_euler('xyz', [np.deg2rad(-16), 0, 0])
+        self.last_rvec = lastR.as_rotvec()
         # with open(self.gps_data_file, newline='') as csvfile:
         #     gps_reader = csv.reader(csvfile)
         #     row = next(gps_reader)
@@ -315,8 +317,10 @@ class PoseEstimator:
         elif len(imagePoints) == 5:
             PnP_image_points = imagePoints
             object_points = np.array(
-                [(-0.32, 0.0, -0.65), (0.32, 0.0, -0.65), (2.80, -0.91, -0.1), (-0.1, -0.755, -0.1),
+                [(-0.32, 0.0, -0.65), (0.32, 0.0, -0.65), (2.80, -0.92, -0.1), (-0.1, -0.765, -0.09),
                  (2.775, 0.72, -0.1)]).astype(np.float64)
+            # [(-0.65, -0.32, 0.0), (-0.65, 0.32, 0.0), (-0.1, 2.8, -0.92), (-0.09, -0.1, -0.765),
+            #      (-0.1, 2.775, 0.72)]).astype(np.float64)
         elif len(imagePoints) == 4:
             PnP_image_points = imagePoints
             object_points = np.array(
@@ -325,8 +329,9 @@ class PoseEstimator:
 
         retval, rvec, tvec = cv2.solvePnP(object_points, PnP_image_points, camera_matrix,
                                           distCoeffs=None,
-                                          # tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_ITERATIVE)
-                                          tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_EPNP)
+                                          tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_ITERATIVE,
+                                          useExtrinsicGuess=True)
+        # tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_EPNP)
         # retval, rvec, tvec, inliers = cv2.solvePnPRansac(object_points, PnP_image_points, self.camera_matrix,
         #                                                  distCoeffs=(-0.11286,   0.11138,   0.00195,   -0.00166))
         rot = Rotation.from_rotvec(rvec)

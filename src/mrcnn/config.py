@@ -154,7 +154,7 @@ class Config(object):
 
     # Pooled ROIs
     POOL_SIZE = 7
-    MASK_POOL_SIZE = 14
+    MASK_POOL_SIZE = 24
 
     # Shape of output mask
     # To change this you also need to change the neural network mask branch
@@ -194,9 +194,7 @@ class Config(object):
         "rpn_bbox_loss": 1.,
         "mrcnn_class_loss": 1.,
         "mrcnn_bbox_loss": 1.,
-        "mrcnn_mask_loss": 0.,
-        "mrcnn_kp_loss": 1000.,
-        "mrcnn_yaw_loss": 0.
+        "mrcnn_kp_loss": 1000.
     }
 
     # Use RPN ROIs or externally generated ROIs for training

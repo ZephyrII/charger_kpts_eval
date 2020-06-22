@@ -127,6 +127,7 @@ class Detector:
                                   model_dir=path_to_model)
 
         weights_path = model.find_last()
+        # weights_path = "/root/share/tf/Keras/16_06_PP_5_wo_mask_bigger_head/charger20200616T1458/mask_rcnn_charger_0021.h5"
 
         # Load weights
         # print("Loading weights ", weights_path)
@@ -196,7 +197,6 @@ class Detector:
             (int(roi[3] + self.offset[1]), self.frame_shape[1]))
         abs_ymax = np.min(
             (int(roi[2] + self.offset[0]), self.frame_shape[0]))
-        print(splash.shape, abs_xmin, abs_ymin, abs_xmax, roi, "xd")
         for i in range(int(len(kps) / 2)):
             absolute_kp.append(
                 (int(kps[i * 2] * bw + self.offset[1] + roi[1]), int(kps[i * 2 + 1] * bh + self.offset[0] + roi[0])))
@@ -253,7 +253,6 @@ class Detector:
                 1] * self.charger_to_slice_ratio:  # or height > self.slice_size[0]*self.charger_to_slice_ratio:
                 self.scale = self.scale * self.slice_size[
                     1] / width * self.charger_to_slice_ratio  # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
-                print(self.scale)
             if self.scale < 0.2:
                 self.bottom = True
                 # self.scale = 0.7
@@ -372,10 +371,10 @@ class Detector:
         x1, y1, x2, y2 = self.best_detection['abs_rect']
         # y_off = int(np.min((np.max((0, y1 - self.slice_size[0] / 2)), self.frame_shape[0])))
         # x_off = int(np.min((np.max((0, x1 - self.slice_size[1] / 2)), self.frame_shape[1])))
-        mask = self.best_detection['mask'].astype(np.uint8)
+        # mask = self.best_detection['mask'].astype(np.uint8)
         # print(self.best_detection['mask'].shape, 'lool')
         # mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-        self.mask_reshaped = mask # cv2.resize(mask, dsize=(x2 - x1, y2 - y1))
+        # self.mask_reshaped = mask # cv2.resize(mask, dsize=(x2 - x1, y2 - y1))
         y_off = int(np.max((0, np.min((y1 - self.slice_size[0] / 5, self.frame_shape[0] - self.slice_size[0])))))
         x_off = int(np.max((0, np.min((x1 - self.slice_size[1] / 5, self.frame_shape[1] - self.slice_size[1])))))
         self.offset = (y_off, x_off)

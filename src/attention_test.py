@@ -50,18 +50,13 @@ for o in outputs:
 # add a global spatial average pooling layer
 x = base_model.output
 x = Concatenate()([x, outputs[0]])
-print('looool', x.shape)
 x = Conv2DTranspose(512, (1, 1), strides=(2, 2))(x)
 x = Concatenate()([x, outputs[1]])
-print(x.shape)
 x = Conv2DTranspose(256, (1, 1), strides=(2, 2))(x)
 x = Concatenate()([x, outputs[2]])
-print(x.shape)
 x = Conv2DTranspose(128, (1, 1), strides=(2, 2))(x)
 x = Concatenate()([x, outputs[3]])
-print(x.shape)
 x = Conv2DTranspose(64, (1, 1), strides=(2, 2))(x)
-print(x.shape)
 predictions = Conv2D(5, (3, 3), activation='relu', padding='same')(x)
 print('predictions', predictions.shape)
 

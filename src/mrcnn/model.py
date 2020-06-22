@@ -1252,32 +1252,57 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
                         name="roi_align_kp")([rois, image_meta] + feature_maps)
 
     # Conv layers
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
                            name="mrcnn_kp_conv1")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
                            name="mrcnn_kp_conv2")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn2')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
                            name="mrcnn_kp_conv3")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn3')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
                            name="mrcnn_kp_conv4")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
+                           name="mrcnn_kp_conv5")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_kp_bn5')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
+                           name="mrcnn_kp_conv6")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_kp_bn6')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
+                           name="mrcnn_kp_conv7")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_kp_bn7')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
+                           name="mrcnn_kp_conv8")(x)
+    x = KL.TimeDistributed(BatchNorm(),
+                           name='mrcnn_kp_bn8')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
 
     # x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"), #added
     #                        name="mrcnn_kp_conv5")(x)
@@ -1286,8 +1311,8 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     # x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
-                           name="mrcnn_kp_deconv")(x)
+    # x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
+    #                        name="mrcnn_kp_deconv")(x)
 
     x = KL.TimeDistributed(KL.Flatten(),
                            name="mrcnn_kp_flat")(x)
@@ -1380,8 +1405,6 @@ def rpn_class_loss_graph(rpn_match, rpn_class_logits):
     # but neutral anchors (match value = 0) don't.
     indices = tf.where(K.not_equal(rpn_match, 0))
     # Pick rows that contribute to the loss and filter out the rest.
-    print("XDD", indices)
-    print(rpn_class_logits)
     rpn_class_logits = tf.gather_nd(rpn_class_logits, indices)
     anchor_class = tf.gather_nd(anchor_class, indices)
     # Cross entropy loss
@@ -2397,11 +2420,11 @@ class MaskRCNN():
                                      train_bn=config.TRAIN_BN,
                                      fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
 
-            mrcnn_mask = build_fpn_mask_graph(rois, mrcnn_feature_maps,
-                                              input_image_meta,
-                                              config.MASK_POOL_SIZE,
-                                              config.NUM_CLASSES,
-                                              train_bn=config.TRAIN_BN)
+            # mrcnn_mask = build_fpn_mask_graph(rois, mrcnn_feature_maps,
+            #                                   input_image_meta,
+            #                                   config.MASK_POOL_SIZE,
+            #                                   config.NUM_CLASSES,
+            #                                   train_bn=config.TRAIN_BN)
 
             mrcnn_keypoints = build_keypoints_graph(rois, mrcnn_feature_maps,
                                                     input_image_meta,
@@ -2409,12 +2432,12 @@ class MaskRCNN():
                                                     config.NUM_CLASSES,
                                                     train_bn=config.TRAIN_BN,
                                                     num_points=config.NUM_POINTS)
-
-            mrcnn_yaw = build_yaw_graph(rois, mrcnn_feature_maps,
-                                        input_image_meta,
-                                        config.MASK_POOL_SIZE,
-                                        config.NUM_CLASSES,
-                                        train_bn=config.TRAIN_BN)
+            #
+            # mrcnn_yaw = build_yaw_graph(rois, mrcnn_feature_maps,
+            #                             input_image_meta,
+            #                             config.MASK_POOL_SIZE,
+            #                             config.NUM_CLASSES,
+            #                             train_bn=config.TRAIN_BN)
 
             # TODO: clean up (use tf.identify if necessary)
             output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
@@ -2428,12 +2451,12 @@ class MaskRCNN():
                 [target_class_ids, mrcnn_class_logits, active_class_ids])
             bbox_loss = KL.Lambda(lambda x: mrcnn_bbox_loss_graph(*x), name="mrcnn_bbox_loss")(
                 [target_bbox, target_class_ids, mrcnn_bbox])
-            mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
-                [target_mask, target_class_ids, mrcnn_mask])
+            # mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
+            #     [target_mask, target_class_ids, mrcnn_mask])
             kp_loss = KL.Lambda(lambda x: mrcnn_keypoints_loss_graph(*x), name="mrcnn_kp_loss")(
                 [target_kp, mrcnn_keypoints])
-            yaw_loss = KL.Lambda(lambda x: mrcnn_yaw_loss_graph(*x), name="mrcnn_yaw_loss")(
-                [target_yaw, mrcnn_yaw])
+            # yaw_loss = KL.Lambda(lambda x: mrcnn_yaw_loss_graph(*x), name="mrcnn_yaw_loss")(
+            #     [target_yaw, mrcnn_yaw])
             # kp_loss=0
 
             # Model
@@ -2442,9 +2465,9 @@ class MaskRCNN():
             if not config.USE_RPN_ROIS:
                 inputs.append(input_rois)
             outputs = [rpn_class_logits, rpn_class, rpn_bbox,
-                       mrcnn_class_logits, mrcnn_class, mrcnn_bbox, mrcnn_mask,
+                       mrcnn_class_logits, mrcnn_class, mrcnn_bbox,
                        rpn_rois, output_rois,
-                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, mask_loss, kp_loss, yaw_loss]
+                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, kp_loss]
             model = KM.Model(inputs, outputs, name='mask_rcnn')
         else:
             # Network Heads
@@ -2463,11 +2486,11 @@ class MaskRCNN():
 
             # Create masks for detections
             detection_boxes = KL.Lambda(lambda x: x[..., :4])(detections)
-            mrcnn_mask = build_fpn_mask_graph(detection_boxes, mrcnn_feature_maps,
-                                              input_image_meta,
-                                              config.MASK_POOL_SIZE,
-                                              config.NUM_CLASSES,
-                                              train_bn=config.TRAIN_BN)
+            # mrcnn_mask = build_fpn_mask_graph(detection_boxes, mrcnn_feature_maps,
+            #                                   input_image_meta,
+            #                                   config.MASK_POOL_SIZE,
+            #                                   config.NUM_CLASSES,
+            #                                   train_bn=config.TRAIN_BN)
 
             mrcnn_keypoints = build_keypoints_graph(detection_boxes, mrcnn_feature_maps,
                                               input_image_meta,
@@ -2476,15 +2499,15 @@ class MaskRCNN():
                                               train_bn=config.TRAIN_BN,
                                               num_points=config.NUM_POINTS)
 
-            mrcnn_yaw = build_yaw_graph(detection_boxes, mrcnn_feature_maps,
-                                        input_image_meta,
-                                        config.MASK_POOL_SIZE,
-                                        config.NUM_CLASSES,
-                                        train_bn=config.TRAIN_BN)
+            # mrcnn_yaw = build_yaw_graph(detection_boxes, mrcnn_feature_maps,
+            #                             input_image_meta,
+            #                             config.MASK_POOL_SIZE,
+            #                             config.NUM_CLASSES,
+            #                             train_bn=config.TRAIN_BN)
 
             model = KM.Model([input_image, input_image_meta, input_anchors],
-                             [detections, mrcnn_class, mrcnn_bbox, mrcnn_mask,
-                              rpn_rois, rpn_class, rpn_bbox, mrcnn_keypoints, attention, mrcnn_yaw],
+                             [detections, mrcnn_class, mrcnn_bbox,
+                              rpn_rois, rpn_class, rpn_bbox, mrcnn_keypoints, attention],
                              name='mask_rcnn')
 
         # Add multi-GPU support.
@@ -2607,7 +2630,7 @@ class MaskRCNN():
         self.keras_model._per_input_losses = {}
         loss_names = [
             "rpn_class_loss",  "rpn_bbox_loss",
-            "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_mask_loss", "mrcnn_kp_loss", "mrcnn_yaw_loss"]
+            "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_kp_loss"]
         for name in loss_names:
             layer = self.keras_model.get_layer(name)
             if layer.output in self.keras_model.losses:
@@ -2778,12 +2801,21 @@ class MaskRCNN():
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
+        # def lr_scheduler(epoch):
+        #     lr = 0.0001
+        #     decay_rate = 0.1
+        #     decay_step = 50
+        #     if epoch % decay_step == 0 and epoch:
+        #         return lr * np.exp(decay_rate, int(epoch/decay_step))
+        #     return lr
+
         # Callbacks
         callbacks = [
             keras.callbacks.TensorBoard(log_dir=self.log_dir,
                                         histogram_freq=0, write_graph=True, write_images=True),
             keras.callbacks.ModelCheckpoint(self.checkpoint_path,
-                                            verbose=0, save_weights_only=True),
+                                            verbose=0, save_weights_only=True, period=1),
+            # keras.callbacks.LearningRateScheduler(lr_scheduler)
         ]
 
         # Add custom callbacks to the list
@@ -2885,7 +2917,7 @@ class MaskRCNN():
         boxes = detections[:N, :4]
         class_ids = detections[:N, 4].astype(np.int32)
         scores = detections[:N, 5]
-        masks = mrcnn_mask[np.arange(N), :, :, class_ids]
+        # masks = mrcnn_mask[np.arange(N), :, :, class_ids]
 
         # Translate normalized coordinates in the resized image to pixel
         # coordinates in the original image before resizing
@@ -2908,17 +2940,17 @@ class MaskRCNN():
             boxes = np.delete(boxes, exclude_ix, axis=0)
             class_ids = np.delete(class_ids, exclude_ix, axis=0)
             scores = np.delete(scores, exclude_ix, axis=0)
-            masks = np.delete(masks, exclude_ix, axis=0)
+            # masks = np.delete(masks, exclude_ix, axis=0)
             N = class_ids.shape[0]
 
         # Resize masks to original image size and set boundary threshold.
         full_masks = []
-        for i in range(N):
-            # Convert neural network mask to full size mask
-            full_mask = utils.unmold_mask(masks[i], boxes[i], original_image_shape)
-            full_masks.append(full_mask)
-        full_masks = np.stack(full_masks, axis=-1)\
-            if full_masks else np.empty(original_image_shape[:2] + (0,))
+        # for i in range(N):
+        #    #Convert neural network mask to full size mask
+        # full_mask = utils.unmold_mask(masks[i], boxes[i], original_image_shape)
+        # full_masks.append(full_mask)
+        # full_masks = np.stack(full_masks, axis=-1)\
+        #     if full_masks else np.empty(original_image_shape[:2] + (0,))
 
         return boxes, class_ids, scores, full_masks
 
@@ -2963,14 +2995,14 @@ class MaskRCNN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        detections, _, _, mrcnn_mask, _, _, _, kp, attention, yaw = \
+        detections, _, _, _, _, _, kp, attention = \
             self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
         # Process detections
 
         results = []
         for i, image in enumerate(images):
             final_rois, final_class_ids, final_scores, final_masks = \
-                self.unmold_detections(detections[i], mrcnn_mask[i],
+                self.unmold_detections(detections[i], None,
                                        image.shape, molded_images[i].shape,
                                        windows[i])
 
@@ -2978,10 +3010,10 @@ class MaskRCNN():
                 "rois": final_rois,
                 "class_ids": final_class_ids,
                 "scores": final_scores,
-                "masks": final_masks,
+                "masks": None,
                 "kp": kp,
                 "attention": attention,
-                "yaw": yaw,
+                "yaw": None,
             })
         return results
 

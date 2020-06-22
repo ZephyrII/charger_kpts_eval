@@ -11,6 +11,7 @@ from Detector import Detector
 from PoseEstimator import PoseEstimator
 import rospy
 from sensor_msgs.msg import CompressedImage, Imu
+from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import PoseStamped, Point32, Quaternion
 from scipy.spatial.transform import Rotation
 from deep_pose_estimator.msg import ImageKeypoints
@@ -29,29 +30,32 @@ class DetectorNode:
                                                    queue_size=1)
         self.posePublisher_back = rospy.Publisher('/pose_estimator/charger_pose/detection_back', PoseStamped,
                                                   queue_size=1)
-        self.keypointsPublisher = rospy.Publisher('/pose_estimator/keypoints', ImageKeypoints, queue_size=1)
+        self.keypointsPublisher = rospy.Publisher('/pose_estimator/keypoints', Float64MultiArray, queue_size=1)
         self.blackfly_topic = '/blackfly/camera/image_color/compressed'
         self.pointgrey_topic = '/pointgrey/camera/image_color/compressed'
         # self.camera_topic = '/video_player/compressed'
         self.imu_topic = '/xsens/data'
         self.gt_pose_topic = '/pose_estimator/charger_pose/location_gps'
         rospy.init_node('deep_pose_estimator', log_level=rospy.DEBUG)
-        path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
-        # path_to_model_bottom = "/root/share/tf/Keras/15_05_bottom_PP_augg_inc"
-        path_to_model = "/root/share/tf/Keras/4_06_PP_5"
+        # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
+        path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
+        # path_to_model = "/root/share/tf/Keras/4_06_PP_5"
+        path_to_model = "/root/share/tf/Keras/16_06_PP_5_wo_mask_bigger_head"
         # path_to_model = "/root/share/tf/Keras/27_05_PP"
         # path_to_model = "/root/share/tf/Keras/22_05_PP_aug4_2112"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
         self.equalize_histogram = False
-        self.blackfly_camera_matrix = np.array([[4996.73451, 0, 2732.95188],
-                                                [0, 4992.93867, 1890.88113],
-                                                [0, 0, 1]])
-        self.blackfly_camera_distortion = (-0.11286, 0.11138, 0.00195, -0.00166, 0.00000)
-        self.pointgrey_camera_matrix = np.array(
-            [[678.170160908967, 0, 511.0007922166781],  # change also in update_pointgrey_image TODO:fix
-             [0, 678.4827850057917, 642.472979517798],
-             [0, 0, 1]]).astype(np.float64)
-        self.pointgrey_camera_distortion = (-0.030122176489, 0.03641181142582, 0.001298022247894, -0.001118918)
+        self.blackfly_camera_matrix = np.array([[4885.3110509, 0, 2685.5111516],
+                                                [0, 4894.72687634, 2024.08742622],
+                                                [0, 0, 1]]).astype(np.float64)
+        # self.blackfly_camera_matrix = np.array([[ 4921.3110509, 0, 2707.5111516],
+        #                                         [0, 4925.72687634, 1896.08742622],
+        #                                         [0, 0, 1]]).astype(np.float64)
+        self.blackfly_camera_distortion = (-0.14178835, 0.09305661, 0.00205776, -0.00133743)
+        self.pointgrey_camera_matrix = np.array([[671.18360957, 0, 662.70347005],
+                                                 [0, 667.94555172, 513.26149201],
+                                                 [0, 0, 1]]).astype(np.float64)
+        self.pointgrey_camera_distortion = (-0.04002205, 0.04100822, 0.00137423, 0.00464031, 0.0)
 
         self.pitch = None
         self.frame_pitch = None
@@ -68,7 +72,7 @@ class DetectorNode:
         self.frames_sent_to_detector = 0
         self.detected_frames = 0
 
-        self.pointgrey_frame_shape = (720, 960)  # self.get_image_shape(self.pointgrey_topic)
+        self.pointgrey_frame_shape = self.get_image_shape(self.pointgrey_topic)
         self.frame_shape = self.get_image_shape(self.blackfly_topic)
         self.detector = Detector(path_to_model, path_to_pole_model, path_to_model_bottom=path_to_model_bottom)
         self.detector.init_size(self.frame_shape)
@@ -79,7 +83,6 @@ class DetectorNode:
         im = rospy.wait_for_message(camera_topic, CompressedImage)
         np_arr = np.fromstring(im.data, np.uint8)
         image_shape = cv2.imdecode(np_arr, -1).shape[:2]
-        print("imsh", image_shape)
         return list(image_shape)
 
     def start(self):
@@ -87,7 +90,7 @@ class DetectorNode:
         rospy.Subscriber(self.pointgrey_topic, CompressedImage, self.update_pointgrey_image, queue_size=1)
         rospy.Subscriber(self.imu_topic, Imu, self.get_pitch, queue_size=1)
         rospy.Subscriber(self.gt_pose_topic, PoseStamped, self.update_gt, queue_size=1)
-        # rospy.wait_for_message(self.pointgrey_topic, CompressedImage)
+        rospy.wait_for_message(self.pointgrey_topic, CompressedImage)
         rospy.wait_for_message(self.blackfly_topic, CompressedImage)
         while not rospy.is_shutdown():
             if self.image is not None and self.pointgrey_image is not None:
@@ -112,7 +115,7 @@ class DetectorNode:
             rospy.loginfo("avg_err_PnP >40m: %f", np.average(np_plot[np_plot[:, 1] > 40, 4]))
             rospy.loginfo("avg_err_PnP <40m: %f", np.average(np_plot[np_plot[:, 1] < 40, 4]))
             rospy.loginfo("avg_err_mask: %f", np.average(np_plot[:, 3]))
-            rospy.loginfo("detections coverage: %f", self.detected_frames/self.all_frames*100)
+            rospy.loginfo("detections coverage: %f", self.detected_frames / self.all_frames * 100)
             rospy.loginfo("all_frames: %d", self.all_frames)
             rospy.loginfo("frames_sent_to_detector: %d", self.frames_sent_to_detector)
             rospy.loginfo("detected_frames: %d", self.detected_frames)
@@ -140,6 +143,7 @@ class DetectorNode:
         np_arr = np.fromstring(image_msg.data, np.uint8)
         image = cv2.imdecode(np_arr, -1)
         image = cv2.undistort(image, self.blackfly_camera_matrix, self.blackfly_camera_distortion)
+        cv2.imwrite("/root/share/tf/image.png", image)
         self.frame_shape = list(image.shape[:2])
         if self.equalize_histogram:
             img_yuv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -154,12 +158,9 @@ class DetectorNode:
         np_arr = np.fromstring(image_msg.data, np.uint8)
         image = cv2.imdecode(np_arr, -1)
         # print(image.shape)
-        camera_matrix = np.array([[678.170160908967, 0, 642.472979517798],
-                                  [0, 678.4827850057917, 511.0007922166781],
-                                  [0, 0, 1]]).astype(np.float64)
-        image = cv2.undistort(image, camera_matrix, self.pointgrey_camera_distortion)
+        image = cv2.undistort(image, self.pointgrey_camera_matrix, self.pointgrey_camera_distortion)
         self.pointgrey_frame_shape = list(image.shape[:2])
-        self.pointgrey_image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)  #cv2.resize(image, None, fx=0.7, fy=0.7)
+        self.pointgrey_image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)  # cv2.resize(image, None, fx=0.7, fy=0.7)
 
     def detect(self, frame, stamp, gt_pose, pitch):
         start_time = time.time()
@@ -172,8 +173,19 @@ class DetectorNode:
                 'keypoints']  # [self.detector.best_detection['keypoints'][0], self.detector.best_detection['keypoints'][1],
             # self.detector.best_detection['keypoints'][2], self.detector.best_detection['keypoints'][3],
             # self.detector.best_detection['keypoints'][5], self.detector.best_detection['keypoints'][6]]
-            for idx, pt in enumerate(self.keypoints):
-                cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, (255, 255, 255), -1)
+            color = (255, 255, 255)
+            for i, pt in enumerate(self.keypoints):
+                if i == 0:
+                    color = (255, 255, 255)
+                elif i == 1:
+                    color = (255, 0, 0)
+                elif i == 2:
+                    color = (0, 255, 0)
+                elif i == 3:
+                    color = (0, 255, 255)
+                else:
+                    color = (255, 0, 255)
+                cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, color, -1)
             self.detected_frames += 1
             # print("self.frame_scale", self.frame_scale)
             # print("self.detector.best_detection", self.detector.best_detection)
@@ -184,7 +196,7 @@ class DetectorNode:
                 camera_matrix = self.blackfly_camera_matrix
             if self.detector.best_detection['score'] > 0.5:
                 self.keypoints = np.multiply(self.keypoints, 1 / self.frame_scale)
-                self.publish_keyponts(stamp, working_copy)
+                # self.publish_keyponts(stamp, working_copy)
                 self.publish_pose(stamp, camera_matrix)
             # cv2.imshow('detection', cv2.resize(disp, (1280, 960)))
         self.image = None
@@ -211,20 +223,29 @@ class DetectorNode:
             self.posePublisher_front.publish(out_msg)
 
     def publish_keyponts(self, stamp, frame):
-        out_msg = ImageKeypoints()
-        out_msg.header.stamp = stamp
-        out_msg.offset.x = self.detector.offset[0]
-        out_msg.offset.y = self.detector.offset[1]
-        out_msg.offset.z = 0
-        out_msg.image.header.stamp = stamp
-        out_msg.image.format = 'png'
-        out_msg.image.data = np.array(cv2.imencode('.png', self.detector.get_slice(frame))[1]).tostring()
-        for kp in self.keypoints:
-            point = Point32()
-            point.x = kp[0]
-            point.y = kp[1]
-            point.z = 0
-            out_msg.keypoints.append(point)
+        out_msg = Float64MultiArray()
+        for idx, kp in enumerate(self.keypoints):
+            if idx == 2:
+                out_msg.data.append(self.keypoints[4][0])
+                out_msg.data.append(self.keypoints[4][1])
+            if idx == 4:
+                continue
+            out_msg.data.append(kp[0])
+            out_msg.data.append(kp[1])
+        # out_msg = ImageKeypoints()
+        # out_msg.header.stamp = stamp
+        # out_msg.offset.x = self.detector.offset[0]
+        # out_msg.offset.y = self.detector.offset[1]
+        # out_msg.offset.z = 0
+        # out_msg.image.header.stamp = stamp
+        # out_msg.image.format = 'png'
+        # out_msg.image.data = np.array(cv2.imencode('.png', self.detector.get_slice(frame))[1]).tostring()
+        # for kp in self.keypoints:
+        #     point = Point32()
+        #     point.x = kp[0]
+        #     point.y = kp[1]
+        #     point.z = 0
+        #     out_msg.keypoints.append(point)
         self.keypointsPublisher.publish(out_msg)
 
 

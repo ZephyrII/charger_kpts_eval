@@ -65,7 +65,7 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 1800
+    STEPS_PER_EPOCH = 2000
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.000001
     NUM_POINTS = 4
@@ -260,7 +260,7 @@ def train(model):
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
                 epochs=300,
-                layers='heads')
+                layers='5+')
 
 
 def color_splash(image, mask):
@@ -312,7 +312,6 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
             if len(r['rois'])==0:
                 continue
             roi = r['rois'][0]
-            print("yooooooł", (r['yaw'][0][0] * 2 - 1) * 180 / 3.14159)
             bw = roi[3]-roi[1]
             bh = roi[2]-roi[0]
             for i in range(config.NUM_POINTS):
