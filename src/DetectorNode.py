@@ -14,12 +14,9 @@ from sensor_msgs.msg import CompressedImage, Imu
 from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import PoseStamped, Point32, Quaternion
 from scipy.spatial.transform import Rotation
-from deep_pose_estimator.msg import ImageKeypoints
+import xml.etree.ElementTree as ET
 import time
-
-from sklearn.mixture import BayesianGaussianMixture
-from sklearn.decomposition import PCA
-
+import math
 
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -60,6 +57,7 @@ class DetectorNode:
         self.pitch = None
         self.frame_pitch = None
         self.keypoints = None
+        self.gt_keypoints = []
         self.image_msg = None
         self.image = None
         self.pointgrey_image_msg = None
@@ -71,9 +69,11 @@ class DetectorNode:
         self.all_frames = 0
         self.frames_sent_to_detector = 0
         self.detected_frames = 0
+        self.kp_predictions = []  # {"kp0": [], "kp1": [], "kp2": [], "kp3": [], "kp4": []}
+        self.cov_matrices = np.empty((10, 10, 0), np.float)
 
-        self.pointgrey_frame_shape = self.get_image_shape(self.pointgrey_topic)
-        self.frame_shape = self.get_image_shape(self.blackfly_topic)
+        # self.pointgrey_frame_shape = self.get_image_shape(self.pointgrey_topic)
+        self.frame_shape = (5472, 3648)  # self.get_image_shape(self.blackfly_topic)
         self.detector = Detector(path_to_model, path_to_pole_model, path_to_model_bottom=path_to_model_bottom)
         self.detector.init_size(self.frame_shape)
         # self.detector.init_size((5000,5000))
@@ -86,39 +86,103 @@ class DetectorNode:
         return list(image_shape)
 
     def start(self):
-        rospy.Subscriber(self.blackfly_topic, CompressedImage, self.update_blackfly_image, queue_size=1)
-        rospy.Subscriber(self.pointgrey_topic, CompressedImage, self.update_pointgrey_image, queue_size=1)
-        rospy.Subscriber(self.imu_topic, Imu, self.get_pitch, queue_size=1)
-        rospy.Subscriber(self.gt_pose_topic, PoseStamped, self.update_gt, queue_size=1)
-        rospy.wait_for_message(self.pointgrey_topic, CompressedImage)
-        rospy.wait_for_message(self.blackfly_topic, CompressedImage)
-        while not rospy.is_shutdown():
-            if self.image is not None and self.pointgrey_image is not None:
+
+        # base_path = '/root/share/tf/dataset/mask_bottom_kp_4pts/'
+        base_path = '/root/share/tf/dataset/5_point/'
+        images = os.listdir(base_path + 'annotations')
+        images.sort(reverse=False)
+        images = iter(images)
+        # cv2.namedWindow("Video")
+        # cv2.imshow("Video", self.image)
+        frame = None
+        alpha = 0.5
+        while True:
+            self.gt_keypoints = []
+            try:
+                fname = next(images)
+                # if 'train1' in fname:
+                img_fname = base_path + 'full_img/' + fname[:-4] + '.png'
+                ann_fname = base_path + 'annotations/' + fname
+                label_fname = base_path + 'labels/' + fname[:-4] + '_label.png'
+                # print(img_fname)
+
+                tree = ET.parse(ann_fname)
+                root = tree.getroot()
+                if not os.path.exists(img_fname):
+                    continue
+                image = cv2.imread(img_fname)
+                self.image = cv2.resize(image, None, fx=self.detector.scale, fy=self.detector.scale)
+                self.frame_shape = self.image.shape[:2]
+                self.detector.init_size(self.frame_shape)
+                # print("fr_sh", self.frame_shape)
+                # label = cv2.imread(label_fname) * 255
+                size = root.find('size')
+                w = int(size.find('width').text)
+                h = int(size.find('height').text)
+                offset_x = int(root.find('offset_x').text)
+                offset_y = int(root.find('offset_y').text)
+                # print("offsets", offset_y, offset_x)
+                for object in root.findall('object'):
+                    scale = float(object.find('scale').text)
+                    # print("scale", scale)
+                    bbox = object.find('bndbox')
+                    kps = object.find('keypoints')
+                    keypoints = []
+                    # print(kps.find('keypoint6'))
+                    if kps.find('keypoint6') is not None:
+                        continue
+                        # for i in range(5 + 2):
+                        #     if i == 1 or i == 2:
+                        #         continue
+                        #     kp = kps.find('keypoint' + str(i))
+                        #     keypoints.append((float(kp.find('x').text), (float(kp.find('y').text))))
+                    else:
+                        for i in range(5):
+                            if i == 2:
+                                continue
+                            kp = kps.find('keypoint' + str(i))
+                            keypoints.append((float(kp.find('x').text), (float(kp.find('y').text))))
+
+                        kp = kps.find('keypoint2')
+                        keypoints.append((float(kp.find('x').text), (float(kp.find('y').text))))
+
+                    for i, kp in enumerate(keypoints):
+                        self.gt_keypoints.append(
+                            ((int(kp[0] * w) + offset_x) / scale, (int(kp[1] * h) + offset_y) / scale))
+            except StopIteration:
+                sum_cov_mtx = np.zeros((10, 10))
+                for single_img_pred in self.kp_predictions:
+                    # print(np.average(self.kp_predictions, axis=0))
+                    single_img_error = single_img_pred - np.average(self.kp_predictions)
+                    print(single_img_pred.shape)
+                    print(np.transpose(single_img_pred).shape)
+                    cov_matrix = np.matmul(single_img_error, np.transpose(single_img_error))
+                    sum_cov_mtx += cov_matrix
+                print(sum_cov_mtx / len(self.kp_predictions))
+                break
+            if self.image is not None:
                 self.frame_gt = self.gt_pose
                 self.frame_pitch = self.pitch
                 self.frame_scale = self.detector.scale
                 k = cv2.waitKey(1)
                 if k == ord('q') or k == 27:
                     exit(0)
+                if k == ord('z'):
+                    sum_cov_mtx = np.zeros((10, 10))
+                    for single_img_pred in self.kp_predictions:
+                        # print(np.average(self.kp_predictions, axis=0))
+                        single_img_error = single_img_pred - np.average(self.kp_predictions)
+                        print(single_img_pred.shape)
+                        print(np.transpose(single_img_pred).shape)
+                        cov_matrix = np.matmul(single_img_error, np.transpose(single_img_error))
+                        sum_cov_mtx += cov_matrix
+                    print(sum_cov_mtx / len(self.kp_predictions))
                 if self.detector.bottom:
                     self.detect(self.pointgrey_image, self.pointgrey_image_msg.header.stamp, self.frame_gt,
                                 self.frame_pitch)
                 else:
-                    self.detect(self.image, self.image_msg.header.stamp, self.frame_gt, self.frame_pitch)
+                    self.detect(self.image, None, self.frame_gt, self.frame_pitch)
 
-        if rospy.is_shutdown():
-            np_plot = np.array(self.pose_estimator.plot_data)
-            rospy.loginfo("avg_err_PnP: %f", np.average(np_plot[:, 4]))
-            # rospy.loginfo("avg_err_PnP 15000: %f", np.average(np_plot[np_plot[:, 6]>-15000, 4]))
-            # rospy.loginfo("avg_err_PnP 20000: %f", np.average(np_plot[np_plot[:, 6]>-20000, 4]))
-            # rospy.loginfo("avg_err_PnP 30000: %f", np.average(np_plot[np_plot[:, 6]>-30000, 4]))
-            rospy.loginfo("avg_err_PnP >40m: %f", np.average(np_plot[np_plot[:, 1] > 40, 4]))
-            rospy.loginfo("avg_err_PnP <40m: %f", np.average(np_plot[np_plot[:, 1] < 40, 4]))
-            rospy.loginfo("avg_err_mask: %f", np.average(np_plot[:, 3]))
-            rospy.loginfo("detections coverage: %f", self.detected_frames / self.all_frames * 100)
-            rospy.loginfo("all_frames: %d", self.all_frames)
-            rospy.loginfo("frames_sent_to_detector: %d", self.frames_sent_to_detector)
-            rospy.loginfo("detected_frames: %d", self.detected_frames)
         rospy.spin()
 
     def get_pitch(self, imu_msg):
@@ -195,10 +259,10 @@ class DetectorNode:
             else:
                 camera_matrix = self.blackfly_camera_matrix
             if self.detector.best_detection['score'] > 0.5:
-                self.keypoints = np.multiply(self.keypoints, 1 / self.frame_scale)
-                # self.publish_keyponts(stamp, working_copy)
-                self.publish_pose(stamp, camera_matrix)
-            # cv2.imshow('detection', cv2.resize(disp, (1280, 960)))
+                self.keypoints = np.multiply(self.keypoints, 1 / self.detector.scale)
+                self.publish_keyponts(stamp, working_copy)
+                self.detector.scale = 1.0
+                # self.publish_pose(stamp, camera_matrix)
         self.image = None
         # print("detection time:", time.time()-start_time)
 
@@ -223,30 +287,46 @@ class DetectorNode:
             self.posePublisher_front.publish(out_msg)
 
     def publish_keyponts(self, stamp, frame):
-        out_msg = Float64MultiArray()
+        # kps = self.detector.best_detection['keypoints']
+        # # roi = self.detector.best_detection['rois'][0]
+        # # bw = roi[3] - roi[1]
+        # # bh = roi[2] - roi[0]
+        # for i in range(int(len(kps) / 2)):
+        #     cv2.circle(frame, (int(kps[i][0]), int(kps[i][1])), 5, (0, 0, 255), -1)
+        # # cv2.rectangle(frame, (int(roi[1]), int(roi[0])), (int(roi[3]), int(roi[2])), (0, 255, 255), 2)
+        # cv2.imshow('Detection', cv2.resize(frame, (1280, 960)))
+
+        def calc_dist(x, z):
+            # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
+            return abs(x[0] - z[0]), abs(x[1] - z[1])
+
+        single_img_pred = []
         for idx, kp in enumerate(self.keypoints):
-            if idx == 2:
-                out_msg.data.append(self.keypoints[4][0])
-                out_msg.data.append(self.keypoints[4][1])
-            if idx == 4:
-                continue
-            out_msg.data.append(kp[0])
-            out_msg.data.append(kp[1])
-        # out_msg = ImageKeypoints()
-        # out_msg.header.stamp = stamp
-        # out_msg.offset.x = self.detector.offset[0]
-        # out_msg.offset.y = self.detector.offset[1]
-        # out_msg.offset.z = 0
-        # out_msg.image.header.stamp = stamp
-        # out_msg.image.format = 'png'
-        # out_msg.image.data = np.array(cv2.imencode('.png', self.detector.get_slice(frame))[1]).tostring()
-        # for kp in self.keypoints:
-        #     point = Point32()
-        #     point.x = kp[0]
-        #     point.y = kp[1]
-        #     point.z = 0
-        #     out_msg.keypoints.append(point)
-        self.keypointsPublisher.publish(out_msg)
+            single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
+
+            print("kp", kp)
+            print("gt kp", self.gt_keypoints[idx])
+            # print("Keypoint", idx, "average error:", np.average(self.kp_predictions["kp" + str(idx)]))
+            # print("Keypoint", idx, "error:", calc_dist(kp, self.gt_keypoints[idx]))
+        self.kp_predictions.append(np.array(single_img_pred).reshape((10, 1)))  # calc_dist(kp, self.gt_keypoints[idx]))
+        # single_img_pred = np.array(single_img_pred).reshape((10,1))
+        # single_img_error = single_img_pred-np.average
+        #
+        # print(single_img_pred.shape)
+        # print(np.transpose(single_img_pred).shape)
+        # cov_matrix = np.matmul(single_img_pred, np.transpose(single_img_pred))
+        # print(cov_matrix)
+        # np.append(self.cov_matrices, [cov_matrix])
+        # out_msg = Float64MultiArray()
+        # for idx, kp in enumerate(self.keypoints):
+        #     if idx == 2:
+        #         out_msg.data.append(self.keypoints[4][0])
+        #         out_msg.data.append(self.keypoints[4][1])
+        #     if idx == 4:
+        #         continue
+        #     out_msg.data.append(kp[0])
+        #     out_msg.data.append(kp[1])
+        # self.keypointsPublisher.publish(out_msg)
 
 
 if __name__ == '__main__':

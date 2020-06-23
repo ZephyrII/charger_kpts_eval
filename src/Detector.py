@@ -237,7 +237,7 @@ class Detector:
             print("No detections")
             self.init_det = True
         else:
-            self.init_det = False
+            # self.init_det = False
             self.get_best_detections()
             # if width < self.slice_size[1]/2 and height < self.slice_size[0]/2:
             #     self.scale = 1.0
@@ -249,14 +249,13 @@ class Detector:
             width = abs_xmax - abs_xmin
             height = abs_ymax - abs_ymin
             # print("width", width)
-            if width > self.slice_size[
-                1] * self.charger_to_slice_ratio:  # or height > self.slice_size[0]*self.charger_to_slice_ratio:
+            if width > self.slice_size[1] * self.charger_to_slice_ratio:
                 self.scale = self.scale * self.slice_size[
                     1] / width * self.charger_to_slice_ratio  # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
-            if self.scale < 0.2:
-                self.bottom = True
-                # self.scale = 0.7
-                self.scale = 1.0
+            # if self.scale < 0.2:
+            #     self.bottom = True
+            #     self.scale = 0.7
+            #     self.scale = 1.0
         return
 
     def get_slice(self, frame, offset=None):
@@ -278,6 +277,9 @@ class Detector:
             frame = cv2.resize(frame, (0, 0), fx=self.scale, fy=self.scale)
             self.frame_shape = frame.shape[:2]
             self.offset = (int(self.offset[0] * self.scale), int(self.offset[1] * self.scale))
+            y_off = int(np.max((0, np.min((self.offset[0], self.frame_shape[0] - self.slice_size[0])))))
+            x_off = int(np.max((0, np.min((self.offset[1], self.frame_shape[1] - self.slice_size[1])))))
+            self.offset = (y_off, x_off)
         # print(self.offset)
         if width == 0:
             return
@@ -286,6 +288,7 @@ class Detector:
             cv2.waitKey(10)
         except cv2.error:
             print("self.get_slice(frame).shape", self.get_slice(frame).shape)
+        print("self.get_slice(frame).shape", self.get_slice(frame).shape)
         self.get_CNN_output(self.get_slice(frame))
         # else:
         #     self.scale = 1.0
@@ -355,7 +358,7 @@ class Detector:
             x_off = int(np.max((0, np.min(
                 (best_detection['abs_rect'][0] - self.slice_size[1] / 5, self.frame_shape[1] - self.slice_size[1])))))
             self.offset = (y_off, x_off)
-            self.init_det = False
+            # self.init_det = False
             return (best_detection['abs_rect'][2] - best_detection['abs_rect'][0],
                     best_detection['abs_rect'][3] - best_detection['abs_rect'][1])
         else:
