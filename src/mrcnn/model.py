@@ -692,7 +692,7 @@ def overlaps_graph(boxes1, boxes2):
     return overlaps
 
 
-def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, gt_yaw, config):
+def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_kp, gt_yaw, config):
     """Generates detection targets for one image. Subsamples proposals and
     generates target class IDs, bounding box deltas, and masks for each.
 
@@ -725,7 +725,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
     proposals, _ = trim_zeros_graph(proposals, name="trim_proposals")
     gt_boxes, non_zeros = trim_zeros_graph(gt_boxes, name="trim_gt_boxes")
     gt_class_ids = tf.boolean_mask(gt_class_ids, non_zeros, name="trim_gt_class_ids")
-    gt_masks = tf.gather(gt_masks, tf.where(non_zeros)[:, 0], axis=2, name="trim_gt_masks")
+    # gt_masks = tf.gather(gt_masks, tf.where(non_zeros)[:, 0], axis=2, name="trim_gt_masks")
     gt_kp = tf.boolean_mask(gt_kp, non_zeros, name="trim_gt_kp")
     gt_yaw = tf.boolean_mask(gt_yaw, non_zeros, name="trim_gt_yaw")
     # Handle COCO crowds
@@ -736,7 +736,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
     crowd_boxes = tf.gather(gt_boxes, crowd_ix)
     gt_class_ids = tf.gather(gt_class_ids, non_crowd_ix)
     gt_boxes = tf.gather(gt_boxes, non_crowd_ix)
-    gt_masks = tf.gather(gt_masks, non_crowd_ix, axis=2)
+    # gt_masks = tf.gather(gt_masks, non_crowd_ix, axis=2)
     gt_kp = tf.gather(gt_kp, non_crowd_ix)
     gt_yaw = tf.gather(gt_yaw, non_crowd_ix)
 
@@ -788,40 +788,40 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
 
     # Assign positive ROIs to GT masks
     # Permute masks to [N, height, width, 1]
-    transposed_masks = tf.expand_dims(tf.transpose(gt_masks, [2, 0, 1]), -1)
+    # transposed_masks = tf.expand_dims(tf.transpose(gt_masks, [2, 0, 1]), -1)
     # Pick the right mask for each ROI
-    roi_masks = tf.gather(transposed_masks, roi_gt_box_assignment)
+    # roi_masks = tf.gather(transposed_masks, roi_gt_box_assignment)
 
     # Compute mask targets
     boxes = positive_rois
-    if config.USE_MINI_MASK:
-        # Transform ROI coordinates from normalized image space
-        # to normalized mini-mask space.
-        y1, x1, y2, x2 = tf.split(positive_rois, 4, axis=1)
-        gt_y1, gt_x1, gt_y2, gt_x2 = tf.split(roi_gt_boxes, 4, axis=1)
-        gt_h = gt_y2 - gt_y1
-        gt_w = gt_x2 - gt_x1
-
-        # kpx, kpy = tf.split(roi_kp, 2, axis=1)
-        # kpy = (kpy - gt_y1) / gt_h
-        # kpx = (kpx - gt_x1) / gt_w
-        # roi_kp = tf.concat([kpy, kpx], 1)
-
-        y1 = (y1 - gt_y1) / gt_h
-        x1 = (x1 - gt_x1) / gt_w
-        y2 = (y2 - gt_y1) / gt_h
-        x2 = (x2 - gt_x1) / gt_w
-        boxes = tf.concat([y1, x1, y2, x2], 1)
-    box_ids = tf.range(0, tf.shape(roi_masks)[0])
-    masks = tf.image.crop_and_resize(tf.cast(roi_masks, tf.float32), boxes,
-                                     box_ids,
-                                     config.MASK_SHAPE)
+    # if config.USE_MINI_MASK:
+    #     # Transform ROI coordinates from normalized image space
+    #     # to normalized mini-mask space.
+    #     y1, x1, y2, x2 = tf.split(positive_rois, 4, axis=1)
+    #     gt_y1, gt_x1, gt_y2, gt_x2 = tf.split(roi_gt_boxes, 4, axis=1)
+    #     gt_h = gt_y2 - gt_y1
+    #     gt_w = gt_x2 - gt_x1
+    #
+    #     # kpx, kpy = tf.split(roi_kp, 2, axis=1)
+    #     # kpy = (kpy - gt_y1) / gt_h
+    #     # kpx = (kpx - gt_x1) / gt_w
+    #     # roi_kp = tf.concat([kpy, kpx], 1)
+    #
+    #     y1 = (y1 - gt_y1) / gt_h
+    #     x1 = (x1 - gt_x1) / gt_w
+    #     y2 = (y2 - gt_y1) / gt_h
+    #     x2 = (x2 - gt_x1) / gt_w
+    #     boxes = tf.concat([y1, x1, y2, x2], 1)
+    # box_ids = tf.range(0, tf.shape(roi_masks)[0])
+    # masks = tf.image.crop_and_resize(tf.cast(roi_masks, tf.float32), boxes,
+    #                                  box_ids,
+    #                                  config.MASK_SHAPE)
     # Remove the extra dimension from masks.
-    masks = tf.squeeze(masks, axis=3)
+    # masks = tf.squeeze(masks, axis=3)
 
     # Threshold mask pixels at 0.5 to have GT masks be 0 or 1 to use with
     # binary cross entropy loss.
-    masks = tf.round(masks)
+    # masks = tf.round(masks)
 
     # Append negative ROIs and pad bbox deltas and masks that
     # are not used for negative ROIs with zeros.
@@ -832,11 +832,11 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, 
     roi_gt_boxes = tf.pad(roi_gt_boxes, [(0, N + P), (0, 0)])
     roi_gt_class_ids = tf.pad(roi_gt_class_ids, [(0, N + P)])
     deltas = tf.pad(deltas, [(0, N + P), (0, 0)])
-    masks = tf.pad(masks, [[0, N + P], (0, 0), (0, 0)])
+    # masks = tf.pad(masks, [[0, N + P], (0, 0), (0, 0)])
     kp = tf.pad(roi_kp, [(0, N + P), (0, 0)])
     yaw = tf.pad(roi_yaw, [(0, N + P), (0, 0)])
 
-    return rois, roi_gt_class_ids, deltas, masks, kp, yaw
+    return rois, roi_gt_class_ids, deltas, kp, yaw
 
 
 class DetectionTargetLayer(KE.Layer):
@@ -872,17 +872,17 @@ class DetectionTargetLayer(KE.Layer):
         proposals = inputs[0]
         gt_class_ids = inputs[1]
         gt_boxes = inputs[2]
-        gt_masks = inputs[3]
-        gt_kp = inputs[4]
-        gt_yaw = inputs[5]
+        # gt_masks = inputs[3]
+        gt_kp = inputs[3]
+        gt_yaw = inputs[4]
 
         # Slice the batch and run a graph for each slice
         # TODO: Rename target_bbox to target_deltas for clarity
-        names = ["rois", "target_class_ids", "target_bbox", "target_mask", "target_kp", "target_yaw"]
+        names = ["rois", "target_class_ids", "target_bbox", "target_kp", "target_yaw"]
         outputs = utils.batch_slice(
-            [proposals, gt_class_ids, gt_boxes, gt_masks, gt_kp, gt_yaw],
-            lambda w, x, y, z, a, b: detection_targets_graph(
-                w, x, y, z, a, b, self.config),
+            [proposals, gt_class_ids, gt_boxes, gt_kp, gt_yaw],
+            lambda w, x, y, z, a: detection_targets_graph(
+                w, x, y, z, a, self.config),
             self.config.IMAGES_PER_GPU, names=names)
         return outputs
 
@@ -891,14 +891,14 @@ class DetectionTargetLayer(KE.Layer):
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # rois
             (None, self.config.TRAIN_ROIS_PER_IMAGE),  # class_ids
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.MASK_SHAPE[0],
-             self.config.MASK_SHAPE[1]),  # masks
+            # (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.MASK_SHAPE[0],
+            #  self.config.MASK_SHAPE[1]),  # masks
             (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS * 2),
             (None, self.config.TRAIN_ROIS_PER_IMAGE)
         ]
 
     def compute_mask(self, inputs, mask=None):
-        return [None, None, None, None, None, None]
+        return [None, None, None, None, None]
 
 
 ############################################################
@@ -1676,13 +1676,13 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
 
     # Resize masks to smaller size to reduce memory usage
     if use_mini_mask:
-        mask = utils.minimize_mask(bbox, mask, config.MINI_MASK_SHAPE)
+        mask = None  # utils.minimize_mask(bbox, mask, config.MINI_MASK_SHAPE)
 
     # Image meta data
     image_meta = compose_image_meta(image_id, original_shape, image.shape,
                                     window, scale, active_class_ids)
 
-    return image, image_meta, class_ids, bbox, mask, kp, yaw
+    return image, image_meta, class_ids, bbox, kp, yaw
 
 
 def build_detection_targets(rpn_rois, gt_class_ids, gt_boxes, gt_masks, config):
@@ -2097,12 +2097,12 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
 
             # If the image source is not to be augmented pass None as augmentation
             if dataset.image_info[image_id]['source'] in no_augmentation_sources:
-                image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_kp, gt_yaw = \
+                image, image_meta, gt_class_ids, gt_boxes, gt_kp, gt_yaw = \
                     load_image_gt(dataset, config, image_id, augment=augment,
                               augmentation=None,
                               use_mini_mask=config.USE_MINI_MASK)
             else:
-                image, image_meta, gt_class_ids, gt_boxes, gt_masks, gt_kp, gt_yaw = \
+                image, image_meta, gt_class_ids, gt_boxes, gt_kp, gt_yaw = \
                     load_image_gt(dataset, config, image_id, augment=augment,
                                 augmentation=augmentation,
                                 use_mini_mask=config.USE_MINI_MASK)
@@ -2122,9 +2122,9 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 rpn_rois = generate_random_rois(
                     image.shape, random_rois, gt_class_ids, gt_boxes)
                 if detection_targets:
-                    rois, mrcnn_class_ids, mrcnn_bbox, mrcnn_mask =\
+                    rois, mrcnn_class_ids, mrcnn_bbox =\
                         build_detection_targets(
-                            rpn_rois, gt_class_ids, gt_boxes, gt_masks, config)
+                            rpn_rois, gt_class_ids, gt_boxes, config)
 
             # Init batch arrays
             if b == 0:
@@ -2144,9 +2144,9 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                     (batch_size, config.MAX_GT_INSTANCES, num_points*2), dtype=np.float32)
                 batch_gt_yaw = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, 1), dtype=np.float32)
-                batch_gt_masks = np.zeros(
-                    (batch_size, gt_masks.shape[0], gt_masks.shape[1],
-                     config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
+                # batch_gt_masks = np.zeros(
+                #     (batch_size, gt_masks.shape[0], gt_masks.shape[1],
+                #      config.MAX_GT_INSTANCES), dtype=gt_masks.dtype)
                 if random_rois:
                     batch_rpn_rois = np.zeros(
                         (batch_size, rpn_rois.shape[0], 4), dtype=rpn_rois.dtype)
@@ -2157,8 +2157,8 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                             (batch_size,) + mrcnn_class_ids.shape, dtype=mrcnn_class_ids.dtype)
                         batch_mrcnn_bbox = np.zeros(
                             (batch_size,) + mrcnn_bbox.shape, dtype=mrcnn_bbox.dtype)
-                        batch_mrcnn_mask = np.zeros(
-                            (batch_size,) + mrcnn_mask.shape, dtype=mrcnn_mask.dtype)
+                        # batch_mrcnn_mask = np.zeros(
+                        #     (batch_size,) + mrcnn_mask.shape, dtype=mrcnn_mask.dtype)
 
             # If more instances than fits in the array, sub-sample from them.
             if gt_boxes.shape[0] > config.MAX_GT_INSTANCES:
@@ -2177,20 +2177,20 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             batch_gt_boxes[b, :gt_boxes.shape[0]] = gt_boxes
             batch_gt_kp[b, :len(gt_kp)] = np.reshape(gt_kp, -1)
             batch_gt_yaw[b] = gt_yaw
-            batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
+            # batch_gt_masks[b, :, :, :gt_masks.shape[-1]] = gt_masks
             if random_rois:
                 batch_rpn_rois[b] = rpn_rois
                 if detection_targets:
                     batch_rois[b] = rois
                     batch_mrcnn_class_ids[b] = mrcnn_class_ids
                     batch_mrcnn_bbox[b] = mrcnn_bbox
-                    batch_mrcnn_mask[b] = mrcnn_mask
+                    # batch_mrcnn_mask[b] = mrcnn_mask
             b += 1
 
             # Batch full?
             if b >= batch_size:
                 inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
-                          batch_gt_class_ids, batch_gt_boxes, batch_gt_masks, batch_gt_kp, batch_gt_yaw]
+                          batch_gt_class_ids, batch_gt_boxes, batch_gt_kp, batch_gt_yaw]
                 outputs = []
 
                 if random_rois:
@@ -2201,7 +2201,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                         batch_mrcnn_class_ids = np.expand_dims(
                             batch_mrcnn_class_ids, -1)
                         outputs.extend(
-                            [batch_mrcnn_class_ids, batch_mrcnn_bbox, batch_mrcnn_mask])
+                            [batch_mrcnn_class_ids, batch_mrcnn_bbox])
 
                 yield inputs, outputs
 
@@ -2408,9 +2408,9 @@ class MaskRCNN():
             # Subsamples proposals and generates target outputs for training
             # Note that proposal class IDs, gt_boxes, and gt_masks are zero
             # padded. Equally, returned rois and targets are zero padded.
-            rois, target_class_ids, target_bbox, target_mask, target_kp, target_yaw = \
+            rois, target_class_ids, target_bbox, target_kp, target_yaw = \
                 DetectionTargetLayer(config, name="proposal_targets")([
-                    target_rois, input_gt_class_ids, gt_boxes, input_gt_masks, input_gt_kp, input_gt_yaw])
+                    target_rois, input_gt_class_ids, gt_boxes, input_gt_kp, input_gt_yaw])
 
             # Network Heads
             # TODO: verify that this handles zero padded ROIs
@@ -2461,7 +2461,7 @@ class MaskRCNN():
 
             # Model
             inputs = [input_image, input_image_meta, input_rpn_match, input_rpn_bbox, input_gt_class_ids,
-                      input_gt_boxes, input_gt_masks, input_gt_kp, input_gt_yaw]
+                      input_gt_boxes, input_gt_kp, input_gt_yaw]
             if not config.USE_RPN_ROIS:
                 inputs.append(input_rois)
             outputs = [rpn_class_logits, rpn_class, rpn_bbox,
@@ -2801,13 +2801,14 @@ class MaskRCNN():
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
-        # def lr_scheduler(epoch):
-        #     lr = 0.0001
-        #     decay_rate = 0.1
-        #     decay_step = 50
-        #     if epoch % decay_step == 0 and epoch:
-        #         return lr * np.exp(decay_rate, int(epoch/decay_step))
-        #     return lr
+        def lr_scheduler(epoch):
+            if 5 < epoch < 15:
+                return 0.00001
+            elif 15 <= epoch < 20:
+                return 0.000001
+            elif epoch >= 20:
+                return 0.0000001
+            return 0.0001
 
         # Callbacks
         callbacks = [
@@ -2815,7 +2816,7 @@ class MaskRCNN():
                                         histogram_freq=0, write_graph=True, write_images=True),
             keras.callbacks.ModelCheckpoint(self.checkpoint_path,
                                             verbose=0, save_weights_only=True, period=1),
-            # keras.callbacks.LearningRateScheduler(lr_scheduler)
+            keras.callbacks.LearningRateScheduler(lr_scheduler)
         ]
 
         # Add custom callbacks to the list
