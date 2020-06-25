@@ -203,11 +203,12 @@ class Detector:
             cv2.circle(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255), -1)
         cv2.rectangle(splash, (int(roi[1]), int(roi[0])), (int(roi[3]), int(roi[2])), (0, 255, 255), 2)
         cv2.imshow('Detection', cv2.resize(splash, (960, 960)))
+        print("uncert", kps[int(len(kps) / 2):])
 
         absolute_kp_scaled = np.multiply(absolute_kp, 1 / self.scale)
         detection = dict(score=r['scores'][0], abs_rect=(abs_xmin, abs_ymin, abs_xmax, abs_ymax),
                          mask=np.sum(r['masks'],
-                                     -1, keepdims=False), keypoints=absolute_kp)
+                                     -1, keepdims=False), keypoints=absolute_kp, uncertainty=kps[int(len(kps) / 2):])
         self.detections.append(detection)
 
     def detect(self, frame, gt):
