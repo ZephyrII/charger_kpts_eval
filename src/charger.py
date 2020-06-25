@@ -67,7 +67,7 @@ class chargerConfig(Config):
     NUM_CLASSES = 1 + 1  # Background + charger
     STEPS_PER_EPOCH = 1300
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.00001
+    LEARNING_RATE = 0.0001
     NUM_POINTS = 5
 
 
