@@ -1248,66 +1248,49 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     """
     # ROI Pooling
     # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
-    x = PyramidROIAlign([pool_size, pool_size],
-                        name="roi_align_kp")([rois, image_meta] + feature_maps)
+    x = PyramidROIAlign([pool_size, pool_size], name="roi_align_kp")([rois, image_meta] + feature_maps)
 
     # Conv layers
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
-                           name="mrcnn_kp_conv1")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_kp_bn1')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv1")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
-                           name="mrcnn_kp_conv2")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_kp_bn2')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv2")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn2')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
-                           name="mrcnn_kp_conv3")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_kp_bn3')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv3")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn3')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
-                           name="mrcnn_kp_conv4")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_kp_bn4')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv4")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
-                           name="mrcnn_kp_conv5")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_kp_bn5')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv5")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn5')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
-                           name="mrcnn_kp_conv6")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_kp_bn6')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv6")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn6')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
-                           name="mrcnn_kp_conv7")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_kp_bn7')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv7")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn7')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"),
-                           name="mrcnn_kp_conv8")(x)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv8")(x)
     x = KL.TimeDistributed(BatchNorm(),
                            name='mrcnn_kp_bn8')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Flatten(),
-                           name="mrcnn_kp_flat")(x)
+    x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_kp_flat")(x)
 
-    x = KL.TimeDistributed(KL.Dense(num_points*2, activation="sigmoid"),
-                           name="mrcnn_kp")(x)
+    # x = KL.TimeDistributed(KL.Dense(num_points*2, activation="sigmoid"), name="mrcnn_kp")(x)
+    x = KL.TimeDistributed(KL.Dense(num_points * 2 * 2, activation="sigmoid"), name="mrcnn_kp")(x)
     return x
 
 
@@ -1501,7 +1484,8 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
 
 
 def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
-    loss = keras.losses.mean_squared_error(target_kp, pred_kp)
+    uncertainty = K.abs(target_kp - pred_kp[:, :, :10])
+    loss = keras.losses.mean_squared_error(K.concatenate([target_kp, uncertainty], axis=-1), pred_kp)
     loss = K.mean(loss)
     return loss
 
