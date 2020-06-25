@@ -130,12 +130,12 @@ class DetectorNode:
                     keypoints = []
                     # print(kps.find('keypoint6'))
                     if kps.find('keypoint6') is not None:
-                        continue
-                        # for i in range(5 + 2):
-                        #     if i == 1 or i == 2:
-                        #         continue
-                        #     kp = kps.find('keypoint' + str(i))
-                        #     keypoints.append((float(kp.find('x').text), (float(kp.find('y').text))))
+                        # continue
+                        for i in range(5 + 2):
+                            if i == 1 or i == 2:
+                                continue
+                            kp = kps.find('keypoint' + str(i))
+                            keypoints.append((float(kp.find('x').text), (float(kp.find('y').text))))
                     else:
                         for i in range(5):
                             if i == 2:
@@ -233,10 +233,7 @@ class DetectorNode:
         self.detector.detect(working_copy, gt_pose)
         self.frames_sent_to_detector += 1
         if self.detector.best_detection is not None:
-            self.keypoints = self.detector.best_detection[
-                'keypoints']  # [self.detector.best_detection['keypoints'][0], self.detector.best_detection['keypoints'][1],
-            # self.detector.best_detection['keypoints'][2], self.detector.best_detection['keypoints'][3],
-            # self.detector.best_detection['keypoints'][5], self.detector.best_detection['keypoints'][6]]
+            self.keypoints = self.detector.best_detection['keypoints']
             color = (255, 255, 255)
             for i, pt in enumerate(self.keypoints):
                 if i == 0:
@@ -251,9 +248,6 @@ class DetectorNode:
                     color = (255, 0, 255)
                 cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, color, -1)
             self.detected_frames += 1
-            # print("self.frame_scale", self.frame_scale)
-            # print("self.detector.best_detection", self.detector.best_detection)
-            # print("self.detector.best_detection['score']", self.detector.best_detection['score'])
             if self.detector.bottom:
                 camera_matrix = self.pointgrey_camera_matrix
             else:
@@ -275,8 +269,6 @@ class DetectorNode:
         out_msg.pose.position.x = tvec[0]
         out_msg.pose.position.y = tvec[1]
         out_msg.pose.position.z = tvec[2]
-        # if self.detector.bottom:
-        #     out_msg.pose.position.z = tvec[2]-5.0
         np_quat = rot.as_quat()
         ros_quat = Quaternion(np_quat[0], np_quat[1], np_quat[2], np_quat[3])
 
@@ -287,46 +279,16 @@ class DetectorNode:
             self.posePublisher_front.publish(out_msg)
 
     def publish_keyponts(self, stamp, frame):
-        # kps = self.detector.best_detection['keypoints']
-        # # roi = self.detector.best_detection['rois'][0]
-        # # bw = roi[3] - roi[1]
-        # # bh = roi[2] - roi[0]
-        # for i in range(int(len(kps) / 2)):
-        #     cv2.circle(frame, (int(kps[i][0]), int(kps[i][1])), 5, (0, 0, 255), -1)
-        # # cv2.rectangle(frame, (int(roi[1]), int(roi[0])), (int(roi[3]), int(roi[2])), (0, 255, 255), 2)
-        # cv2.imshow('Detection', cv2.resize(frame, (1280, 960)))
-
         def calc_dist(x, z):
             # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
             return abs(x[0] - z[0]), abs(x[1] - z[1])
 
         single_img_pred = []
         for idx, kp in enumerate(self.keypoints):
+            if calc_dist(kp, self.gt_keypoints[idx])[0] > 500:
+                return
             single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
-
-            print("kp", kp)
-            print("gt kp", self.gt_keypoints[idx])
-            # print("Keypoint", idx, "average error:", np.average(self.kp_predictions["kp" + str(idx)]))
-            # print("Keypoint", idx, "error:", calc_dist(kp, self.gt_keypoints[idx]))
         self.kp_predictions.append(np.array(single_img_pred).reshape((10, 1)))  # calc_dist(kp, self.gt_keypoints[idx]))
-        # single_img_pred = np.array(single_img_pred).reshape((10,1))
-        # single_img_error = single_img_pred-np.average
-        #
-        # print(single_img_pred.shape)
-        # print(np.transpose(single_img_pred).shape)
-        # cov_matrix = np.matmul(single_img_pred, np.transpose(single_img_pred))
-        # print(cov_matrix)
-        # np.append(self.cov_matrices, [cov_matrix])
-        # out_msg = Float64MultiArray()
-        # for idx, kp in enumerate(self.keypoints):
-        #     if idx == 2:
-        #         out_msg.data.append(self.keypoints[4][0])
-        #         out_msg.data.append(self.keypoints[4][1])
-        #     if idx == 4:
-        #         continue
-        #     out_msg.data.append(kp[0])
-        #     out_msg.data.append(kp[1])
-        # self.keypointsPublisher.publish(out_msg)
 
 
 if __name__ == '__main__':
