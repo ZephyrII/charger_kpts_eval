@@ -1303,17 +1303,6 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
                            name='mrcnn_kp_bn8')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-
-    # x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"), #added
-    #                        name="mrcnn_kp_conv5")(x)
-    # x = KL.TimeDistributed(BatchNorm(),                             #added
-    #                        name='mrcnn_kp_bn5')(x, training=train_bn)
-    # x = KL.Activation('relu')(x)
-    # x = KL.Dropout(0.5)(x)
-
-    # x = KL.TimeDistributed(KL.Conv2DTranspose(256, (2, 2), strides=2, activation="relu"),
-    #                        name="mrcnn_kp_deconv")(x)
-
     x = KL.TimeDistributed(KL.Flatten(),
                            name="mrcnn_kp_flat")(x)
 
