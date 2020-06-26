@@ -37,7 +37,7 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model = "/root/share/tf/Keras/25_06_PP_5_uncertainty_1280"
+        path_to_model = "/root/share/tf/Keras/26_06_PP_5_uncertainty_1280"
         # path_to_model = "/root/share/tf/Keras/25_06_PP_5_uncertainty_1280"
         # path_to_model = "/root/share/tf/Keras/22_05_PP_aug4_2112"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')

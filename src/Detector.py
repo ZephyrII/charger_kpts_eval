@@ -197,10 +197,16 @@ class Detector:
             (int(roi[3] + self.offset[1]), self.frame_shape[1]))
         abs_ymax = np.min(
             (int(roi[2] + self.offset[0]), self.frame_shape[0]))
-        for i in range(int(len(kps) / 2)):
+        for i in range(int(len(kps) / 2 / 2)):
             absolute_kp.append(
                 (int(kps[i * 2] * bw + self.offset[1] + roi[1]), int(kps[i * 2 + 1] * bh + self.offset[0] + roi[0])))
             cv2.circle(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255), -1)
+            current_point_uncertainty = (kps[i * 2 + int(len(kps) / 2)] * bw, kps[i * 2 + int(len(kps) / 2) + 1] * bh)
+            print(current_point_uncertainty[0])
+            cv2.ellipse(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])),
+                        # (10.2,5.6), angle=0,
+                        (int(current_point_uncertainty[0]), int(current_point_uncertainty[1])), angle=0,
+                        startAngle=0, endAngle=360, color=(0, 255, 255))
         cv2.rectangle(splash, (int(roi[1]), int(roi[0])), (int(roi[3]), int(roi[2])), (0, 255, 255), 2)
         cv2.imshow('Detection', cv2.resize(splash, (960, 960)))
         print("uncert", kps[int(len(kps) / 2):])
