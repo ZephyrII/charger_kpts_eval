@@ -1317,7 +1317,7 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     x = KL.TimeDistributed(KL.Flatten(),
                            name="mrcnn_kp_flat")(x)
 
-    x = KL.TimeDistributed(KL.Dense(num_points*2, activation="sigmoid"),
+    x = KL.TimeDistributed(KL.Dense(num_points * 2 * 2, activation="sigmoid"),
                            name="mrcnn_kp")(x)
     return x
 
@@ -1609,7 +1609,7 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
         mode=config.IMAGE_RESIZE_MODE)
     mask = utils.resize_mask(mask, scale, padding, crop)
     bbox = bbox * scale
-    top_pad = (config.IMAGE_MAX_DIM - 720) // 2
+    top_pad = 0  # (config.IMAGE_MAX_DIM - 720) // 2
     bbox = np.array([[bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax],
                      [bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax],
                      [bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax]])

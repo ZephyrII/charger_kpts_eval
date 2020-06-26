@@ -37,7 +37,7 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model = "/root/share/tf/Keras/24_06_PP_5_wo_mask_bigger_head_1280"
+        path_to_model = "/root/share/tf/Keras/25_06_PP_5_uncertainty_1280"
         # path_to_model = "/root/share/tf/Keras/25_06_PP_5_uncertainty_1280"
         # path_to_model = "/root/share/tf/Keras/22_05_PP_aug4_2112"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
@@ -284,7 +284,9 @@ class DetectorNode:
             return abs(x[0] - z[0]), abs(x[1] - z[1])
 
         single_img_pred = []
-        for idx, kp in enumerate(self.keypoints):
+        for idx, kp in enumerate(self.keypoints[:5]):
+            print(len(self.gt_keypoints))
+            print("kp", len(self.keypoints))
             if calc_dist(kp, self.gt_keypoints[idx])[0] > 500:
                 return
             single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
