@@ -37,8 +37,8 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model = "/root/share/tf/Keras/26_06_PP_5_uncertainty_1280"
-        # path_to_model = "/root/share/tf/Keras/25_06_PP_5_uncertainty_1280"
+        # path_to_model = "/root/share/tf/Keras/29_06_PP_5_separate_uncertainty"
+        path_to_model = "/root/share/tf/Keras/3_07_PP_5_separate_uncertainty_UGLLI_loss"
         # path_to_model = "/root/share/tf/Keras/22_05_PP_aug4_2112"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
         self.equalize_histogram = False
@@ -58,6 +58,7 @@ class DetectorNode:
         self.frame_pitch = None
         self.keypoints = None
         self.gt_keypoints = []
+        self.gt_keypoints_slice = []
         self.image_msg = None
         self.image = None
         self.pointgrey_image_msg = None
@@ -67,6 +68,8 @@ class DetectorNode:
         self.frame_gt = None
         self.frame_scale = None
         self.all_frames = 0
+        self.total_kp = 0
+        self.inside_sigma = 0
         self.frames_sent_to_detector = 0
         self.detected_frames = 0
         self.kp_predictions = []  # {"kp0": [], "kp1": [], "kp2": [], "kp3": [], "kp4": []}
@@ -89,17 +92,18 @@ class DetectorNode:
 
         # base_path = '/root/share/tf/dataset/mask_bottom_kp_4pts/'
         base_path = '/root/share/tf/dataset/5_point/'
-        images = os.listdir(base_path + 'annotations')
-        images.sort(reverse=False)
-        images = iter(images)
+        annotations = os.listdir(base_path + 'annotations')
+        annotations.sort(reverse=False)
+        annotations = iter(annotations)
         # cv2.namedWindow("Video")
         # cv2.imshow("Video", self.image)
         frame = None
         alpha = 0.5
         while True:
             self.gt_keypoints = []
+            self.gt_keypoints_slice = []
             try:
-                fname = next(images)
+                fname = next(annotations)
                 # if 'train1' in fname:
                 img_fname = base_path + 'full_img/' + fname[:-4] + '.png'
                 ann_fname = base_path + 'annotations/' + fname
@@ -149,6 +153,7 @@ class DetectorNode:
                     for i, kp in enumerate(keypoints):
                         self.gt_keypoints.append(
                             ((int(kp[0] * w) + offset_x) / scale, (int(kp[1] * h) + offset_y) / scale))
+                        # self.gt_keypoints_slice.append(((int(kp[0] * w)), (int(kp[1] * h))))
             except StopIteration:
                 sum_cov_mtx = np.zeros((10, 10))
                 for single_img_pred in self.kp_predictions:
@@ -156,15 +161,15 @@ class DetectorNode:
                     single_img_error = single_img_pred - np.average(self.kp_predictions)
                     print(single_img_pred.shape)
                     print(np.transpose(single_img_pred).shape)
-                    cov_matrix = np.matmul(single_img_error, np.transpose(single_img_error))
-                    sum_cov_mtx += cov_matrix
+                    cov_matrices = np.matmul(single_img_error, np.transpose(single_img_error))
+                    sum_cov_mtx += cov_matrices
                 print(sum_cov_mtx / len(self.kp_predictions))
                 break
             if self.image is not None:
                 self.frame_gt = self.gt_pose
                 self.frame_pitch = self.pitch
                 self.frame_scale = self.detector.scale
-                k = cv2.waitKey(1)
+                k = cv2.waitKey(0)
                 if k == ord('q') or k == 27:
                     exit(0)
                 if k == ord('z'):
@@ -172,16 +177,36 @@ class DetectorNode:
                     for single_img_pred in self.kp_predictions:
                         # print(np.average(self.kp_predictions, axis=0))
                         single_img_error = single_img_pred - np.average(self.kp_predictions)
-                        print(single_img_pred.shape)
-                        print(np.transpose(single_img_pred).shape)
-                        cov_matrix = np.matmul(single_img_error, np.transpose(single_img_error))
-                        sum_cov_mtx += cov_matrix
-                    print(sum_cov_mtx / len(self.kp_predictions))
+                        # print(single_img_pred.shape)
+                        # print(np.transpose(single_img_pred).shape)
+                        cov_matrices = np.matmul(single_img_error, np.transpose(single_img_error))
+                        sum_cov_mtx += cov_matrices
+                    # print(sum_cov_mtx / len(self.kp_predictions))
                 if self.detector.bottom:
                     self.detect(self.pointgrey_image, self.pointgrey_image_msg.header.stamp, self.frame_gt,
                                 self.frame_pitch)
                 else:
                     self.detect(self.image, None, self.frame_gt, self.frame_pitch)
+                if self.detector.best_detection is None:
+                    continue
+                cov_matrices = self.detector.best_detection["uncertainty"]
+                sigma_sq_0 = cov_matrices[:, 0, 0] * (
+                            self.detector.best_detection['abs_rect'][2] - self.detector.best_detection['abs_rect'][0])
+                sigma_sq_1 = cov_matrices[:, 1, 1] * (
+                            self.detector.best_detection['abs_rect'][3] - self.detector.best_detection['abs_rect'][1])
+                # (x - h) ^ 2 / a ^ 2 + (y - k) ^ 2 / b ^ 2 <= 1
+                for idx, kp in enumerate(self.gt_keypoints):
+                    a = np.square(kp[0] - self.keypoints[idx][0]) / sigma_sq_0[idx] + \
+                        np.square(kp[1] - self.keypoints[idx][1]) / sigma_sq_1[idx]
+                    self.total_kp += 1
+                    # print(a)
+                    if a <= 1:
+                        self.inside_sigma += 1
+                        print("inside ratio", self.inside_sigma / self.total_kp)
+                # print("sigma", cov_matrices)
+                print("std_dev", np.sqrt(sigma_sq_0), np.sqrt(sigma_sq_1))
+                print("gt", self.gt_keypoints)
+                print("pred", self.keypoints)
 
         rospy.spin()
 
@@ -230,7 +255,7 @@ class DetectorNode:
         start_time = time.time()
         disp = np.copy(frame)
         working_copy = np.copy(frame)
-        self.detector.detect(working_copy, gt_pose)
+        self.detector.detect(working_copy, gt_pose, self.gt_keypoints)
         self.frames_sent_to_detector += 1
         if self.detector.best_detection is not None:
             self.keypoints = self.detector.best_detection['keypoints']
@@ -285,8 +310,8 @@ class DetectorNode:
 
         single_img_pred = []
         for idx, kp in enumerate(self.keypoints[:5]):
-            print(len(self.gt_keypoints))
-            print("kp", len(self.keypoints))
+            # print(len(self.gt_keypoints))
+            # print("kp", len(self.keypoints))
             if calc_dist(kp, self.gt_keypoints[idx])[0] > 500:
                 return
             single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))

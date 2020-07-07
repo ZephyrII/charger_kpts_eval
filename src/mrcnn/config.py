@@ -128,7 +128,7 @@ class Config(object):
     IMAGE_RESIZE_MODE = "square"
     IMAGE_MIN_DIM = 100
     # IMAGE_MAX_DIM = 2112
-    IMAGE_MAX_DIM = 1280
+    IMAGE_MAX_DIM = 960
     # Minimum scaling ratio. Checked after MIN_IMAGE_DIM and can force further
     # up scaling. For example, if set to 2 then images are scaled up to double
     # the width and height, or more, even if MIN_IMAGE_DIM doesn't require it.
@@ -194,7 +194,8 @@ class Config(object):
         "rpn_bbox_loss": 1.,
         "mrcnn_class_loss": 1.,
         "mrcnn_bbox_loss": 1.,
-        "mrcnn_kp_loss": 1000.
+        "mrcnn_kp_loss": 1000.,
+        "mrcnn_uncertainty_loss": 10.
     }
 
     # Use RPN ROIs or externally generated ROIs for training

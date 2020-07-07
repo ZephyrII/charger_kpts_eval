@@ -67,8 +67,8 @@ class chargerConfig(Config):
     NUM_CLASSES = 1 + 1  # Background + charger
     STEPS_PER_EPOCH = 2000
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.00001
-    NUM_POINTS = 4
+    LEARNING_RATE = 0.0001
+    NUM_POINTS = 5
 
 
 ############################################################
@@ -143,29 +143,29 @@ class ChargerDataset(utils.Dataset):
             ymax = float(bbox.find('ymax').text)
             bw = (xmax - xmin) * w
             bh = (ymax - ymin) * h
-            for i in range(num_points):
-                kp = kps.find('keypoint' + str(i))
-                keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-                                  (float(kp.find('y').text) - ymin) * h / bh))
-            # try:  # 5_points
-            #     kps.find('keypoint6').text
-            #     for i in range(num_points+2):
-            #         if i==1 or i==2:
-            #             continue
-            #         kp = kps.find('keypoint' + str(i))
-            #         keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-            #                           (float(kp.find('y').text) - ymin) * h / bh))
-            # except:
-            #     for i in range(num_points):
-            #         if i==2:
-            #             continue
-            #         kp = kps.find('keypoint' + str(i))
-            #         keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-            #                           (float(kp.find('y').text) - ymin) * h / bh))
-            #
-            #     kp = kps.find('keypoint2')
+            # for i in range(num_points):
+            #     kp = kps.find('keypoint' + str(i))
             #     keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
             #                       (float(kp.find('y').text) - ymin) * h / bh))
+            try:  # 5_points
+                kps.find('keypoint6').text
+                for i in range(num_points + 2):
+                    if i == 1 or i == 2:
+                        continue
+                    kp = kps.find('keypoint' + str(i))
+                    keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
+                                      (float(kp.find('y').text) - ymin) * h / bh))
+            except:
+                for i in range(num_points):
+                    if i == 2:
+                        continue
+                    kp = kps.find('keypoint' + str(i))
+                    keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
+                                      (float(kp.find('y').text) - ymin) * h / bh))
+
+                kp = kps.find('keypoint2')
+                keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
+                                  (float(kp.find('y').text) - ymin) * h / bh))
 
         return keypoints
 
@@ -194,10 +194,10 @@ class ChargerDataset(utils.Dataset):
         for obj in root.findall('object'):
             bndboxxml = obj.find('bndbox')
             if bndboxxml is not None:
-                xmin = int(float(bndboxxml.find('xmin').text) * w)
-                ymin = int(float(bndboxxml.find('ymin').text) * h)
-                xmax = int(float(bndboxxml.find('xmax').text) * w)
-                ymax = int(float(bndboxxml.find('ymax').text) * h)
+                xmin = int(float(bndboxxml.find('xmin').text) * w + 0.0 * w)
+                ymin = int(float(bndboxxml.find('ymin').text) * h + 0.0 * h)
+                xmax = int(float(bndboxxml.find('xmax').text) * w - 0.0 * w)
+                ymax = int(float(bndboxxml.find('ymax').text) * h - 0.0 * h)
 
         return xmin, ymin, xmax, ymax
 
