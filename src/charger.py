@@ -194,10 +194,10 @@ class ChargerDataset(utils.Dataset):
         for obj in root.findall('object'):
             bndboxxml = obj.find('bndbox')
             if bndboxxml is not None:
-                xmin = int(float(bndboxxml.find('xmin').text) * w)
-                ymin = int(float(bndboxxml.find('ymin').text) * h)
-                xmax = int(float(bndboxxml.find('xmax').text) * w)
-                ymax = int(float(bndboxxml.find('ymax').text) * h)
+                xmin = int(float(bndboxxml.find('xmin').text) * w + 0.0 * w)
+                ymin = int(float(bndboxxml.find('ymin').text) * h + 0.0 * h)
+                xmax = int(float(bndboxxml.find('xmax').text) * w - 0.0 * w)
+                ymax = int(float(bndboxxml.find('ymax').text) * h - 0.0 * h)
 
         return xmin, ymin, xmax, ymax
 

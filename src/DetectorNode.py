@@ -14,12 +14,9 @@ from sensor_msgs.msg import CompressedImage, Imu
 from std_msgs.msg import Float64MultiArray
 from geometry_msgs.msg import PoseStamped, Point32, Quaternion
 from scipy.spatial.transform import Rotation
-from deep_pose_estimator.msg import ImageKeypoints
+import xml.etree.ElementTree as ET
 import time
-
-from sklearn.mixture import BayesianGaussianMixture
-from sklearn.decomposition import PCA
-
+import math
 
 # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
 # os.environ["CUDA_VISIBLE_DEVICES"] = ""
@@ -40,8 +37,8 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model = "/root/share/tf/Keras/16_06_PP_5_wo_mask_bigger_head"
-        # path_to_model = "/root/share/tf/Keras/27_05_PP"
+        # path_to_model = "/root/share/tf/Keras/29_06_PP_5_separate_uncertainty"
+        path_to_model = "/root/share/tf/Keras/3_07_PP_5_separate_uncertainty_UGLLI_loss"
         # path_to_model = "/root/share/tf/Keras/22_05_PP_aug4_2112"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
         self.equalize_histogram = False
@@ -60,6 +57,8 @@ class DetectorNode:
         self.pitch = None
         self.frame_pitch = None
         self.keypoints = None
+        self.gt_keypoints = []
+        self.gt_keypoints_slice = []
         self.image_msg = None
         self.image = None
         self.pointgrey_image_msg = None
@@ -69,8 +68,12 @@ class DetectorNode:
         self.frame_gt = None
         self.frame_scale = None
         self.all_frames = 0
+        self.total_kp = 0
+        self.inside_sigma = 0
         self.frames_sent_to_detector = 0
         self.detected_frames = 0
+        self.kp_predictions = []  # {"kp0": [], "kp1": [], "kp2": [], "kp3": [], "kp4": []}
+        self.cov_matrices = np.empty((10, 10, 0), np.float)
 
         self.pointgrey_frame_shape = self.get_image_shape(self.pointgrey_topic)
         self.frame_shape = self.get_image_shape(self.blackfly_topic)
@@ -100,25 +103,22 @@ class DetectorNode:
                 k = cv2.waitKey(1)
                 if k == ord('q') or k == 27:
                     exit(0)
+                if k == ord('z'):
+                    sum_cov_mtx = np.zeros((10, 10))
+                    for single_img_pred in self.kp_predictions:
+                        # print(np.average(self.kp_predictions, axis=0))
+                        single_img_error = single_img_pred - np.average(self.kp_predictions)
+                        # print(single_img_pred.shape)
+                        # print(np.transpose(single_img_pred).shape)
+                        cov_matrices = np.matmul(single_img_error, np.transpose(single_img_error))
+                        sum_cov_mtx += cov_matrices
+                    # print(sum_cov_mtx / len(self.kp_predictions))
                 if self.detector.bottom:
                     self.detect(self.pointgrey_image, self.pointgrey_image_msg.header.stamp, self.frame_gt,
                                 self.frame_pitch)
                 else:
                     self.detect(self.image, self.image_msg.header.stamp, self.frame_gt, self.frame_pitch)
 
-        if rospy.is_shutdown():
-            np_plot = np.array(self.pose_estimator.plot_data)
-            rospy.loginfo("avg_err_PnP: %f", np.average(np_plot[:, 4]))
-            # rospy.loginfo("avg_err_PnP 15000: %f", np.average(np_plot[np_plot[:, 6]>-15000, 4]))
-            # rospy.loginfo("avg_err_PnP 20000: %f", np.average(np_plot[np_plot[:, 6]>-20000, 4]))
-            # rospy.loginfo("avg_err_PnP 30000: %f", np.average(np_plot[np_plot[:, 6]>-30000, 4]))
-            rospy.loginfo("avg_err_PnP >40m: %f", np.average(np_plot[np_plot[:, 1] > 40, 4]))
-            rospy.loginfo("avg_err_PnP <40m: %f", np.average(np_plot[np_plot[:, 1] < 40, 4]))
-            rospy.loginfo("avg_err_mask: %f", np.average(np_plot[:, 3]))
-            rospy.loginfo("detections coverage: %f", self.detected_frames / self.all_frames * 100)
-            rospy.loginfo("all_frames: %d", self.all_frames)
-            rospy.loginfo("frames_sent_to_detector: %d", self.frames_sent_to_detector)
-            rospy.loginfo("detected_frames: %d", self.detected_frames)
         rospy.spin()
 
     def get_pitch(self, imu_msg):
@@ -166,13 +166,10 @@ class DetectorNode:
         start_time = time.time()
         disp = np.copy(frame)
         working_copy = np.copy(frame)
-        self.detector.detect(working_copy, gt_pose)
+        self.detector.detect(working_copy, gt_pose, self.gt_keypoints)
         self.frames_sent_to_detector += 1
         if self.detector.best_detection is not None:
-            self.keypoints = self.detector.best_detection[
-                'keypoints']  # [self.detector.best_detection['keypoints'][0], self.detector.best_detection['keypoints'][1],
-            # self.detector.best_detection['keypoints'][2], self.detector.best_detection['keypoints'][3],
-            # self.detector.best_detection['keypoints'][5], self.detector.best_detection['keypoints'][6]]
+            self.keypoints = self.detector.best_detection['keypoints']
             color = (255, 255, 255)
             for i, pt in enumerate(self.keypoints):
                 if i == 0:
@@ -187,18 +184,15 @@ class DetectorNode:
                     color = (255, 0, 255)
                 cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, color, -1)
             self.detected_frames += 1
-            # print("self.frame_scale", self.frame_scale)
-            # print("self.detector.best_detection", self.detector.best_detection)
-            # print("self.detector.best_detection['score']", self.detector.best_detection['score'])
             if self.detector.bottom:
                 camera_matrix = self.pointgrey_camera_matrix
             else:
                 camera_matrix = self.blackfly_camera_matrix
             if self.detector.best_detection['score'] > 0.5:
-                self.keypoints = np.multiply(self.keypoints, 1 / self.frame_scale)
-                # self.publish_keyponts(stamp, working_copy)
+                self.keypoints = np.multiply(self.keypoints, 1 / self.detector.scale)
+                self.publish_keyponts(stamp, working_copy)
+                self.detector.scale = 1.0
                 self.publish_pose(stamp, camera_matrix)
-            # cv2.imshow('detection', cv2.resize(disp, (1280, 960)))
         self.image = None
         # print("detection time:", time.time()-start_time)
 
@@ -211,8 +205,6 @@ class DetectorNode:
         out_msg.pose.position.x = tvec[0]
         out_msg.pose.position.y = tvec[1]
         out_msg.pose.position.z = tvec[2]
-        # if self.detector.bottom:
-        #     out_msg.pose.position.z = tvec[2]-5.0
         np_quat = rot.as_quat()
         ros_quat = Quaternion(np_quat[0], np_quat[1], np_quat[2], np_quat[3])
 
@@ -223,30 +215,18 @@ class DetectorNode:
             self.posePublisher_front.publish(out_msg)
 
     def publish_keyponts(self, stamp, frame):
-        out_msg = Float64MultiArray()
-        for idx, kp in enumerate(self.keypoints):
-            if idx == 2:
-                out_msg.data.append(self.keypoints[4][0])
-                out_msg.data.append(self.keypoints[4][1])
-            if idx == 4:
-                continue
-            out_msg.data.append(kp[0])
-            out_msg.data.append(kp[1])
-        # out_msg = ImageKeypoints()
-        # out_msg.header.stamp = stamp
-        # out_msg.offset.x = self.detector.offset[0]
-        # out_msg.offset.y = self.detector.offset[1]
-        # out_msg.offset.z = 0
-        # out_msg.image.header.stamp = stamp
-        # out_msg.image.format = 'png'
-        # out_msg.image.data = np.array(cv2.imencode('.png', self.detector.get_slice(frame))[1]).tostring()
-        # for kp in self.keypoints:
-        #     point = Point32()
-        #     point.x = kp[0]
-        #     point.y = kp[1]
-        #     point.z = 0
-        #     out_msg.keypoints.append(point)
-        self.keypointsPublisher.publish(out_msg)
+        def calc_dist(x, z):
+            # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
+            return abs(x[0] - z[0]), abs(x[1] - z[1])
+
+        single_img_pred = []
+        for idx, kp in enumerate(self.keypoints[:5]):
+            # print(len(self.gt_keypoints))
+            # print("kp", len(self.keypoints))
+            if calc_dist(kp, self.gt_keypoints[idx])[0] > 500:
+                return
+            single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
+        self.kp_predictions.append(np.array(single_img_pred).reshape((10, 1)))  # calc_dist(kp, self.gt_keypoints[idx]))
 
 
 if __name__ == '__main__':

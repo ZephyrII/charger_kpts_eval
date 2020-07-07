@@ -95,7 +95,7 @@ class Detector:
         np.set_printoptions(suppress=True)
         np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
         self.slice_size = (720, 960)
-        # self.slice_size = (1584, 2112)
+        # self.slice_size = (1280, 1280)
         self.offset = (0, 0)
         self.scale = 1.0
         # self.scale = 0.7
@@ -108,6 +108,7 @@ class Detector:
         self.moving_avg_image = None
         self.init_det = True
         self.bottom = False
+        self.gt_kp = None
 
         # path_to_pole_model = path_to_pole_model
         self.pole_detection_graph = tf.Graph()
@@ -186,11 +187,14 @@ class Detector:
         if len(r['rois']) == 0:
             return
         kps = r['kp'][0][0]
+        uncertainty_raw = r["uncertainty"][0][0]
+        # print(uncertainty_raw.shape)
         roi = r['rois'][0]
         # roi[2] = roi[2]+roi[2]-roi[0]
         bw = roi[3] - roi[1]
         bh = roi[2] - roi[0]
         absolute_kp = []
+        uncertainty = []
         abs_xmin = int(roi[1] + self.offset[1])
         abs_ymin = int(roi[0] + self.offset[0])
         abs_xmax = np.min(
@@ -201,21 +205,31 @@ class Detector:
             absolute_kp.append(
                 (int(kps[i * 2] * bw + self.offset[1] + roi[1]), int(kps[i * 2 + 1] * bh + self.offset[0] + roi[0])))
             cv2.circle(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255), -1)
+            cv2.circle(splash, (
+                int(self.gt_kp[i][0] * self.scale - self.offset[1]),
+                int(self.gt_kp[i][1] * self.scale - self.offset[0])),
+                       3, (255, 255, 255), -1)
+            print("gt_kp", int(self.gt_kp[i][0]), int(self.gt_kp[i][1]))
+            L = np.array([[uncertainty_raw[i * 2], 0], [uncertainty_raw[i * 2 + 1], uncertainty_raw[i * 2 + 2]]])
+            sigma = np.matmul(L, L.transpose())
+            # uncertainty.append((uncertainty_raw[i * 2] * bw, uncertainty_raw[i * 2 + 1] * bh))
+            uncertainty.append(sigma)
+            cv2.ellipse(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])),
+                        (int(np.sqrt(sigma[0, 0] * bw)), int(np.sqrt(sigma[1, 1] * bh))), angle=0,
+                        startAngle=0, endAngle=360, color=(0, 255, 255))
         cv2.rectangle(splash, (int(roi[1]), int(roi[0])), (int(roi[3]), int(roi[2])), (0, 255, 255), 2)
-        cv2.imshow('Detection', cv2.resize(splash, (1280, 960)))
+        cv2.imshow('Detection', cv2.resize(splash, (960, 960)))
+        # print("uncert", kps[int(len(kps) / 2):])
 
         absolute_kp_scaled = np.multiply(absolute_kp, 1 / self.scale)
         detection = dict(score=r['scores'][0], abs_rect=(abs_xmin, abs_ymin, abs_xmax, abs_ymax),
                          mask=np.sum(r['masks'],
-                                     -1, keepdims=False), keypoints=absolute_kp)
+                                     -1, keepdims=False), keypoints=absolute_kp, uncertainty=np.array(uncertainty))
         self.detections.append(detection)
 
-    def detect(self, frame, gt):
+    def detect(self, frame, gt, gt_kp):
+        self.gt_kp = gt_kp
         self.frame_shape = frame.shape[:2]
-
-        # print("self.bottom", self.bottom)
-        # print("self.offset", self.offset)
-        # print("self.frame_shape", self.frame_shape)
         y_off = int(np.max((0, np.min((self.offset[0], self.frame_shape[0] - self.slice_size[0])))))
         x_off = int(np.max((0, np.min((self.offset[1], self.frame_shape[1] - self.slice_size[1])))))
         self.offset = (y_off, x_off)
@@ -237,7 +251,7 @@ class Detector:
             print("No detections")
             self.init_det = True
         else:
-            self.init_det = False
+            # self.init_det = False
             self.get_best_detections()
             # if width < self.slice_size[1]/2 and height < self.slice_size[0]/2:
             #     self.scale = 1.0
@@ -249,14 +263,13 @@ class Detector:
             width = abs_xmax - abs_xmin
             height = abs_ymax - abs_ymin
             # print("width", width)
-            if width > self.slice_size[
-                1] * self.charger_to_slice_ratio:  # or height > self.slice_size[0]*self.charger_to_slice_ratio:
+            if width > self.slice_size[1] * self.charger_to_slice_ratio:
                 self.scale = self.scale * self.slice_size[
                     1] / width * self.charger_to_slice_ratio  # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
-            if self.scale < 0.2:
-                self.bottom = True
-                # self.scale = 0.7
-                self.scale = 1.0
+            # if self.scale < 0.2:
+            #     self.bottom = True
+            #     self.scale = 0.7
+            #     self.scale = 1.0
         return
 
     def get_slice(self, frame, offset=None):
@@ -278,6 +291,9 @@ class Detector:
             frame = cv2.resize(frame, (0, 0), fx=self.scale, fy=self.scale)
             self.frame_shape = frame.shape[:2]
             self.offset = (int(self.offset[0] * self.scale), int(self.offset[1] * self.scale))
+            y_off = int(np.max((0, np.min((self.offset[0], self.frame_shape[0] - self.slice_size[0])))))
+            x_off = int(np.max((0, np.min((self.offset[1], self.frame_shape[1] - self.slice_size[1])))))
+            self.offset = (y_off, x_off)
         # print(self.offset)
         if width == 0:
             return
@@ -286,6 +302,7 @@ class Detector:
             cv2.waitKey(10)
         except cv2.error:
             print("self.get_slice(frame).shape", self.get_slice(frame).shape)
+        # print("self.get_slice(frame).shape", self.get_slice(frame).shape)
         self.get_CNN_output(self.get_slice(frame))
         # else:
         #     self.scale = 1.0
@@ -355,7 +372,7 @@ class Detector:
             x_off = int(np.max((0, np.min(
                 (best_detection['abs_rect'][0] - self.slice_size[1] / 5, self.frame_shape[1] - self.slice_size[1])))))
             self.offset = (y_off, x_off)
-            self.init_det = False
+            # self.init_det = False
             return (best_detection['abs_rect'][2] - best_detection['abs_rect'][0],
                     best_detection['abs_rect'][3] - best_detection['abs_rect'][1])
         else:
