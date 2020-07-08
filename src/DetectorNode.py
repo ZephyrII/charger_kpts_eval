@@ -12,8 +12,10 @@ from PoseEstimator import PoseEstimator
 import rospy
 from sensor_msgs.msg import CompressedImage, Imu
 from std_msgs.msg import Float64MultiArray
-from geometry_msgs.msg import PoseStamped, Point32, Quaternion
+from geometry_msgs.msg import PoseStamped, Quaternion
 from scipy.spatial.transform import Rotation
+from custom_solvepnp_msg.msg import KeypointsWithCovarianceStamped
+
 import xml.etree.ElementTree as ET
 import time
 import math
@@ -27,7 +29,8 @@ class DetectorNode:
                                                    queue_size=1)
         self.posePublisher_back = rospy.Publisher('/pose_estimator/charger_pose/detection_back', PoseStamped,
                                                   queue_size=1)
-        self.keypointsPublisher = rospy.Publisher('/pose_estimator/keypoints', Float64MultiArray, queue_size=1)
+        self.keypointsPublisher = rospy.Publisher('/pose_estimator/keypoints', KeypointsWithCovarianceStamped,
+                                                  queue_size=1)
         self.blackfly_topic = '/blackfly/camera/image_color/compressed'
         self.pointgrey_topic = '/pointgrey/camera/image_color/compressed'
         # self.camera_topic = '/video_player/compressed'
@@ -69,13 +72,12 @@ class DetectorNode:
         self.frame_scale = None
         self.all_frames = 0
         self.total_kp = 0
-        self.inside_sigma = 0
         self.frames_sent_to_detector = 0
         self.detected_frames = 0
         self.kp_predictions = []  # {"kp0": [], "kp1": [], "kp2": [], "kp3": [], "kp4": []}
         self.cov_matrices = np.empty((10, 10, 0), np.float)
 
-        self.pointgrey_frame_shape = self.get_image_shape(self.pointgrey_topic)
+        self.pointgrey_frame_shape = (5, 5)  # self.get_image_shape(self.pointgrey_topic)
         self.frame_shape = self.get_image_shape(self.blackfly_topic)
         self.detector = Detector(path_to_model, path_to_pole_model, path_to_model_bottom=path_to_model_bottom)
         self.detector.init_size(self.frame_shape)
@@ -93,10 +95,10 @@ class DetectorNode:
         rospy.Subscriber(self.pointgrey_topic, CompressedImage, self.update_pointgrey_image, queue_size=1)
         rospy.Subscriber(self.imu_topic, Imu, self.get_pitch, queue_size=1)
         rospy.Subscriber(self.gt_pose_topic, PoseStamped, self.update_gt, queue_size=1)
-        rospy.wait_for_message(self.pointgrey_topic, CompressedImage)
+        # rospy.wait_for_message(self.pointgrey_topic, CompressedImage)
         rospy.wait_for_message(self.blackfly_topic, CompressedImage)
         while not rospy.is_shutdown():
-            if self.image is not None and self.pointgrey_image is not None:
+            if self.image is not None:  # and self.pointgrey_image is not None:
                 self.frame_gt = self.gt_pose
                 self.frame_pitch = self.pitch
                 self.frame_scale = self.detector.scale
@@ -163,6 +165,7 @@ class DetectorNode:
         self.pointgrey_image = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)  # cv2.resize(image, None, fx=0.7, fy=0.7)
 
     def detect(self, frame, stamp, gt_pose, pitch):
+        print("node detect")
         start_time = time.time()
         disp = np.copy(frame)
         working_copy = np.copy(frame)
@@ -190,7 +193,7 @@ class DetectorNode:
                 camera_matrix = self.blackfly_camera_matrix
             if self.detector.best_detection['score'] > 0.5:
                 self.keypoints = np.multiply(self.keypoints, 1 / self.detector.scale)
-                self.publish_keyponts(stamp, working_copy)
+                self.publish_keyponts(stamp)
                 self.detector.scale = 1.0
                 self.publish_pose(stamp, camera_matrix)
         self.image = None
@@ -214,19 +217,69 @@ class DetectorNode:
         else:
             self.posePublisher_front.publish(out_msg)
 
-    def publish_keyponts(self, stamp, frame):
-        def calc_dist(x, z):
-            # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
-            return abs(x[0] - z[0]), abs(x[1] - z[1])
+        # out_msg_cov = PoseWithCovarianceStamped()
+        # out_msg_cov.header = out_msg.header
+        # out_msg_cov.pose = out_msg.pose
+        # out_msg_cov.pose.position.c
 
-        single_img_pred = []
-        for idx, kp in enumerate(self.keypoints[:5]):
-            # print(len(self.gt_keypoints))
-            # print("kp", len(self.keypoints))
-            if calc_dist(kp, self.gt_keypoints[idx])[0] > 500:
-                return
-            single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
-        self.kp_predictions.append(np.array(single_img_pred).reshape((10, 1)))  # calc_dist(kp, self.gt_keypoints[idx]))
+    def publish_keyponts(self, stamp):
+        out_msg = KeypointsWithCovarianceStamped()
+        out_msg.header.stamp = stamp
+        out_msg.keypoints = []
+        out_msg.covariance = []
+        for idx, kp in enumerate(self.keypoints):
+            if idx == 2:
+                out_msg.keypoints.append(self.keypoints[4][0])
+                out_msg.keypoints.append(self.keypoints[4][1])
+            if idx == 4:
+                continue
+            out_msg.keypoints.append(kp[0])
+            out_msg.keypoints.append(kp[1])
+        cov_mx = np.array(self.detector.best_detection["uncertainty"])
+        for idx, cm in enumerate(cov_mx):
+            if idx == 2:
+                for itm in cm.flatten():
+                    out_msg.covariance.append(itm)
+            if idx == 4:
+                continue
+            for itm in cm.flatten():
+                out_msg.covariance.append(itm)
+        print(out_msg.keypoints)
+        self.keypointsPublisher.publish(out_msg)
+
+        # out_msg = Float64MultiArray()
+        # for idx, kp in enumerate(self.keypoints):
+        #     if idx == 2:
+        #         out_msg.data.append(self.keypoints[4][0])
+        #         out_msg.data.append(self.keypoints[4][1])
+        #     if idx == 4:
+        #         continue
+        #     out_msg.data.append(kp[0])
+        #     out_msg.data.append(kp[1])
+        # cov_mx = np.array(self.detector.best_detection["uncertainty"])
+        # for idx, cm in enumerate(cov_mx):
+        #     if idx == 2:
+        #         for itm in cm.flatten():
+        #             out_msg.data.append(itm)
+        #     if idx == 4:
+        #         continue
+        #     for itm in cm.flatten():
+        #         out_msg.data.append(itm)
+        # print(out_msg.data)
+        # self.keypointsPublisher.publish(out_msg)
+
+        # def calc_dist(x, z):
+        #     # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
+        #     return abs(x[0] - z[0]), abs(x[1] - z[1])
+        #
+        # single_img_pred = []
+        # for idx, kp in enumerate(self.keypoints[:5]):
+        #     # print(len(self.gt_keypoints))
+        #     # print("kp", len(self.keypoints))
+        #     if calc_dist(kp, self.gt_keypoints[idx])[0] > 500:
+        #         return
+        #     single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
+        # self.kp_predictions.append(np.array(single_img_pred).reshape((10, 1)))  # calc_dist(kp, self.gt_keypoints[idx]))
 
 
 if __name__ == '__main__':

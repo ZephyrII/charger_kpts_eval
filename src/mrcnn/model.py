@@ -1336,8 +1336,8 @@ def build_uncertainty_graph(rois, feature_maps, image_meta, pool_size, num_class
     x = KL.TimeDistributed(KL.Flatten(),
                            name="mrcnn_uncertainty_flat")(x)
 
-    x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"),
-                           name="mrcnn_uncertainty")(x)
+    x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)
+    # x = KL.TimeDistributed(KL.Dense((num_points*2+1)*num_points, activation="elu"), name="mrcnn_uncertainty")(x)
     return x
 
 ############################################################
@@ -1487,7 +1487,6 @@ def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
 
 def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, pred_uncertainty):
     loss = 0.0
-    sum_sigma = 0.0
     pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 5, 3))
     pred_uncertainty += 1.0
     target_kp = K.reshape(target_kp, (1, 200, 5, 2))
@@ -1495,35 +1494,45 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, pred_uncertainty):
 
     L = K.stack([[pred_uncertainty[:, :, :, 0], K.zeros((1, 200, 5))],
                  [pred_uncertainty[:, :, :, 1], pred_uncertainty[:, :, :, 2]]], axis=0)
-    # print("L", L.shape)
     L = K.permute_dimensions(L, pattern=(2, 3, 4, 0, 1))
     L = L[0]
-    # print("L", L.shape)
     sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 3, 2)), axes=(4, 3))
-    # sigma_loss = (sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0])
-    # print("sigma", sigma.shape)
-    # inv_sigma = 1/(sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0]) * K.stack([[sigma[:, :, 1, 1], -sigma[:, :, 1, 0]],
-    #                                                                                                     [-sigma[:, :, 0, 1], sigma[:, :, 0, 0]]])
+    sigma_loss = K.mean(sigma[:, :, 0, 0] * sigma[:, :, 1, 1] - sigma[:, :, 0, 1] * sigma[:, :, 1, 0])
+
     inv_sigma = tf.linalg.inv(sigma)
-    # inv_sigma = K.permute_dimensions(inv_sigma, pattern=(2, 3, 0, 1))  # TODO verify dim order
-    # print("inv_sigma", inv_sigma.shape)
-    # print("target_kp", target_kp.shape)
-    # print("pred_kp", pred_kp.shape)
+
     mahalanobis = K.batch_dot(K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
                                         K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
                                         (200, 5, 1, 2)), inv_sigma)
-    # print("mahalanobis", mahalanobis.shape)
     mahalanobis = K.batch_dot(mahalanobis,
                               K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
                                         K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
                                         (200, 5, 2, 1)))
-    # print("mahalanobis", mahalanobis.shape)
-    loss += K.mean(mahalanobis) + K.mean(sigma)
+    loss += K.mean(mahalanobis) + K.log(sigma_loss)
 
-    # target_kp = K.reshape(target_kp, (1, 200, 10))
-    # pred_kp = K.reshape(pred_kp, (1, 200, 10))
-    # pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 15))
-    # print("losss", (loss + sum_sigma).shape)
+    # loss = 0.0
+    # pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 5, 3))
+    # pred_uncertainty += 1.0
+    # target_kp = K.reshape(target_kp, (1, 200, 5, 2))
+    # pred_kp = K.reshape(pred_kp, (1, 200, 5, 2))
+    #
+    # L = K.stack([[pred_uncertainty[:, :, :, 0], K.zeros((1, 200, 5))],
+    #              [pred_uncertainty[:, :, :, 1], pred_uncertainty[:, :, :, 2]]], axis=0)
+    # L = K.permute_dimensions(L, pattern=(2, 3, 4, 0, 1))
+    # L = L[0]
+    # sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 3, 2)), axes=(4, 3))
+    # sigma_loss = K.mean(sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0])
+    #
+    # inv_sigma = tf.linalg.inv(sigma)
+    #
+    # mahalanobis = K.batch_dot(K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
+    #                                     K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
+    #                                     (200, 5, 1, 2)), inv_sigma)
+    # mahalanobis = K.batch_dot(mahalanobis,
+    #                           K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
+    #                                     K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
+    #                                     (200, 5, 2, 1)))
+    # loss += K.mean(mahalanobis) + K.log(sigma_loss)
 
     return loss
 

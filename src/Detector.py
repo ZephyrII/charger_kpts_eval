@@ -201,22 +201,30 @@ class Detector:
             (int(roi[3] + self.offset[1]), self.frame_shape[1]))
         abs_ymax = np.min(
             (int(roi[2] + self.offset[0]), self.frame_shape[0]))
+        sigma_avg = []
         for i in range(int(len(kps) / 2)):
             absolute_kp.append(
                 (int(kps[i * 2] * bw + self.offset[1] + roi[1]), int(kps[i * 2 + 1] * bh + self.offset[0] + roi[0])))
             cv2.circle(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255), -1)
-            cv2.circle(splash, (
-                int(self.gt_kp[i][0] * self.scale - self.offset[1]),
-                int(self.gt_kp[i][1] * self.scale - self.offset[0])),
-                       3, (255, 255, 255), -1)
-            print("gt_kp", int(self.gt_kp[i][0]), int(self.gt_kp[i][1]))
+            # cv2.circle(splash, (
+            #     int(self.gt_kp[i][0] * self.scale - self.offset[1]),
+            #     int(self.gt_kp[i][1] * self.scale - self.offset[0])),
+            #            3, (255, 255, 255), -1)
+            # print("gt_kp", int(self.gt_kp[i][0]), int(self.gt_kp[i][1]))
             L = np.array([[uncertainty_raw[i * 2], 0], [uncertainty_raw[i * 2 + 1], uncertainty_raw[i * 2 + 2]]])
             sigma = np.matmul(L, L.transpose())
+            sigma = np.array([[sigma[0, 0] * bw, sigma[0, 1] * np.sqrt(bw) * np.sqrt(bh)],
+                              [sigma[1, 0] * np.sqrt(bw) * np.sqrt(bh), sigma[1, 1] * bh]])
             # uncertainty.append((uncertainty_raw[i * 2] * bw, uncertainty_raw[i * 2 + 1] * bh))
             uncertainty.append(sigma)
             cv2.ellipse(splash, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])),
-                        (int(np.sqrt(sigma[0, 0] * bw)), int(np.sqrt(sigma[1, 1] * bh))), angle=0,
+                        (int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1]))), angle=0,
                         startAngle=0, endAngle=360, color=(0, 255, 255))
+            print("sigma", int(np.sqrt(sigma[0, 0] * bw)), int(np.sqrt(sigma[1, 1] * bh)))
+            # print(sigma)
+            sigma_avg.append(np.sqrt(sigma[0, 0]))
+            sigma_avg.append(np.sqrt(sigma[1, 1]))
+        print("Sigma average", np.average(sigma_avg))
         cv2.rectangle(splash, (int(roi[1]), int(roi[0])), (int(roi[3]), int(roi[2])), (0, 255, 255), 2)
         cv2.imshow('Detection', cv2.resize(splash, (960, 960)))
         # print("uncert", kps[int(len(kps) / 2):])
@@ -228,6 +236,7 @@ class Detector:
         self.detections.append(detection)
 
     def detect(self, frame, gt, gt_kp):
+        print("detector detect")
         self.gt_kp = gt_kp
         self.frame_shape = frame.shape[:2]
         y_off = int(np.max((0, np.min((self.offset[0], self.frame_shape[0] - self.slice_size[0])))))
