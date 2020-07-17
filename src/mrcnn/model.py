@@ -17,6 +17,7 @@ from collections import OrderedDict
 import multiprocessing
 import numpy as np
 import tensorflow as tf
+from tensorflow.contrib.distributions import fill_triangular
 import keras
 import keras.backend as K
 import keras.layers as KL
@@ -832,7 +833,7 @@ def detection_targets_graph(proposals, gt_class_ids, gt_boxes, gt_kp, config):
     roi_gt_boxes = tf.pad(roi_gt_boxes, [(0, N + P), (0, 0)])
     roi_gt_class_ids = tf.pad(roi_gt_class_ids, [(0, N + P)])
     deltas = tf.pad(deltas, [(0, N + P), (0, 0)])
-    kp = tf.pad(roi_kp, [(0, N + P), (0, 0)])
+    kp = tf.pad(roi_kp, [(0, N + P), (0, 0), (0, 0)])
 
     return rois, roi_gt_class_ids, deltas, kp
 
@@ -889,8 +890,8 @@ class DetectionTargetLayer(KE.Layer):
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # rois
             (None, self.config.TRAIN_ROIS_PER_IMAGE),  # class_ids
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS * 2),
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS * 2)
+            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS, 2),
+            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS, 2)
         ]
 
     def compute_mask(self, inputs, mask=None):
@@ -1285,6 +1286,7 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_kp_flat")(x)
 
     x = KL.TimeDistributed(KL.Dense(num_points * 2, activation="sigmoid"), name="mrcnn_kp")(x)
+    x = KL.TimeDistributed(KL.Reshape([num_points, 2]))(x)
     return x
 
 
@@ -1337,7 +1339,12 @@ def build_uncertainty_graph(rois, feature_maps, image_meta, pool_size, num_class
                            name="mrcnn_uncertainty_flat")(x)
 
     x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)
-    # x = KL.TimeDistributed(KL.Dense((num_points*2+1)*num_points, activation="elu"), name="mrcnn_uncertainty")(x)
+
+    x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)
+    x = KL.TimeDistributed(KL.Reshape([num_points, 3]))(x)
+    print("x0", x)
+    x = KL.TimeDistributed(KL.Lambda(lambda y: fill_triangular(y)))(x)
+    print("x1", x)
     return x
 
 ############################################################
@@ -1477,62 +1484,80 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
 
 def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
     loss = keras.losses.mean_squared_error(target_kp, pred_kp)
-    print(target_kp.shape[-1])
-    loss_uncertainty = keras.losses.mean_squared_error(target_kp - pred_kp[target_kp.shape[-1]:],
-                                                       pred_kp[:target_kp.shape[-1]])
-    loss_uncertainty = K.mean(loss_uncertainty)
+    # print(target_kp.shape[-1])
+    # loss_uncertainty = keras.losses.mean_squared_error(target_kp - pred_kp[target_kp.shape[-1]:],
+    #                                                    pred_kp[:target_kp.shape[-1]])
+    # loss_uncertainty = K.mean(loss_uncertainty)
     loss = K.mean(loss)
     return loss  # +loss_uncertainty
 
 
-def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, pred_uncertainty):
-    loss = 0.0
-    pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 5, 3))
-    pred_uncertainty += 1.0
-    target_kp = K.reshape(target_kp, (1, 200, 5, 2))
-    pred_kp = K.reshape(pred_kp, (1, 200, 5, 2))
-
-    L = K.stack([[pred_uncertainty[:, :, :, 0], K.zeros((1, 200, 5))],
-                 [pred_uncertainty[:, :, :, 1], pred_uncertainty[:, :, :, 2]]], axis=0)
-    L = K.permute_dimensions(L, pattern=(2, 3, 4, 0, 1))
-    L = L[0]
-    sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 3, 2)), axes=(4, 3))
-    sigma_loss = K.mean(sigma[:, :, 0, 0] * sigma[:, :, 1, 1] - sigma[:, :, 0, 1] * sigma[:, :, 1, 0])
-
-    inv_sigma = tf.linalg.inv(sigma)
-
-    mahalanobis = K.batch_dot(K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
-                                        K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
-                                        (200, 5, 1, 2)), inv_sigma)
-    mahalanobis = K.batch_dot(mahalanobis,
-                              K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
-                                        K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
-                                        (200, 5, 2, 1)))
-    loss += K.mean(mahalanobis) + K.log(sigma_loss)
-
+def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, target_bbox, mrcnn_bbox):
     # loss = 0.0
     # pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 5, 3))
     # pred_uncertainty += 1.0
-    # target_kp = K.reshape(target_kp, (1, 200, 5, 2))
-    # pred_kp = K.reshape(pred_kp, (1, 200, 5, 2))
+    target_kp = K.reshape(target_kp, (200, 5, 2))
+    pred_kp = K.reshape(pred_kp, (200, 5, 2))
     #
     # L = K.stack([[pred_uncertainty[:, :, :, 0], K.zeros((1, 200, 5))],
     #              [pred_uncertainty[:, :, :, 1], pred_uncertainty[:, :, :, 2]]], axis=0)
     # L = K.permute_dimensions(L, pattern=(2, 3, 4, 0, 1))
     # L = L[0]
     # sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 3, 2)), axes=(4, 3))
-    # sigma_loss = K.mean(sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0])
+    # sigma_loss = K.mean(sigma[:, :, 0, 0] * sigma[:, :, 1, 1] - sigma[:, :, 0, 1] * sigma[:, :, 1, 0])
     #
     # inv_sigma = tf.linalg.inv(sigma)
     #
+    # mahalanobis = K.batch_dot(target_kp - pred_kp, inv_sigma)
+    # mahalanobis = K.batch_dot(mahalanobis, target_kp - pred_kp)
+    # loss += K.mean(mahalanobis) + K.log(sigma_loss)
+
+    # pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 5, 3))
+    # pred_uncertainty += 1.0
+    # print(target_bbox)
+    # print(mrcnn_bbox)
+    # bw_target = K.abs(target_bbox[0, :, 3] - target_bbox[0, :, 1])
+    # bh_target = K.abs(target_bbox[0, :, 2] - target_bbox[0, :, 0])
+    # bw_pred = K.abs(mrcnn_bbox[0, :, 0, 3] - mrcnn_bbox[0, :, 0, 1])
+    # bh_pred = K.abs(mrcnn_bbox[0, :, 0, 2] - mrcnn_bbox[0, :, 0, 0])
+    # target_kp = K.reshape(target_kp, (200, 5, 2))*K.repeat(K.stack([bw_target, bh_target], axis=-1), 5)
+    # print("ttK", K.repeat(K.stack([bw_target, bh_target], axis=-1), 5))
+    # print(K.stack([bw_target, bh_target], axis=-1))
+    # pred_kp = K.reshape(pred_kp, (200, 5, 2))*K.repeat(K.stack([bw_pred, bh_pred], axis=-1), 5)
+    # print("Lshape", L.shape)
+    L = L[0]
+    sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 3, 2)))  # , axes=(4, 3))
+    # print("bw_pred", bw_pred)
+    # print("sigma[0, 0]", sigma[:, :, 0, 0])
+    # bw_pred = K.expand_dims(bw_pred, axis=-1)
+    # bh_pred = K.expand_dims(bh_pred, axis=-1)
+    # sigma = K.stack([K.stack([sigma[:, :, 0, 0] * K.repeat_elements(bw_pred, 5, axis=-1), sigma[:, :, 0, 1] * K.sqrt(K.repeat_elements(bw_pred, 5, axis=-1)) * K.sqrt(K.repeat_elements(bh_pred, 5, axis=-1))], axis=-1),
+    #                  K.stack([sigma[:, :, 1, 0] * K.sqrt(K.repeat_elements(bw_pred, 5, axis=-1)) * K.sqrt(K.repeat_elements(bh_pred, 5, axis=-1)), sigma[:, :, 1, 1] * K.repeat_elements(bh_pred, 5, axis=-1)], axis=-1)], axis=-1)
+    # sigma = np.array([[sigma[0, 0] * bw_pred, sigma[0, 1] * K.sqrt(bw_pred) * K.sqrt(bh_pred)],
+    #                   [sigma[1, 0] * K.sqrt(bw_pred) * K.sqrt(bh_pred), sigma[1, 1] * bh_pred]])
+    # print("sigma", sigma)
+    sigma_loss = sigma
+    # sigma_loss = K.log(sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0])
+    # sigma = K.print_tensor(sigma, "mysigma")
+    # sigma = tf.Print(sigma, [sigma], summarize=-1)
+
+    inv_sigma = tf.linalg.inv(sigma)
+
     # mahalanobis = K.batch_dot(K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
     #                                     K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
     #                                     (200, 5, 1, 2)), inv_sigma)
+    # print("inv_sigma",inv_sigma)
+    # print("target_kp",target_kp)
+    # print("pred_kp",pred_kp)
+    mahalanobis = K.batch_dot(K.expand_dims(target_kp - pred_kp, -2), inv_sigma)
+    # print("mahalanobis", mahalanobis)
     # mahalanobis = K.batch_dot(mahalanobis,
     #                           K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
     #                                     K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
     #                                     (200, 5, 2, 1)))
-    # loss += K.mean(mahalanobis) + K.log(sigma_loss)
+    mahalanobis = K.batch_dot(mahalanobis, K.expand_dims(target_kp - pred_kp, -1))
+    print("mahalanobis", mahalanobis)
+    loss = K.mean(mahalanobis) + K.mean(sigma_loss)
 
     return loss
 
@@ -1606,7 +1631,7 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     """
     # Load image and mask
     image = dataset.load_image(image_id)
-    mask, class_ids = dataset.load_mask(image_id)
+    # mask, class_ids = dataset.load_mask(image_id)
     kp = dataset.load_kp(image_id, config.NUM_POINTS)
     xmin, ymin, xmax, ymax = dataset.load_bbox(image_id)
     bbox = np.array([[ymin, xmin, ymax, xmax]])
@@ -1620,9 +1645,9 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
         min_scale=config.IMAGE_MIN_SCALE,
         max_dim=config.IMAGE_MAX_DIM,
         mode=config.IMAGE_RESIZE_MODE)
-    mask = utils.resize_mask(mask, scale, padding, crop)
+    # mask = utils.resize_mask(mask, scale, padding, crop)
     bbox = bbox * scale
-    top_pad = (config.IMAGE_MAX_DIM - 720) // 2
+    top_pad = 0  # (config.IMAGE_MAX_DIM - 720) // 2
     bbox = np.array([[bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax],
                      [bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax],
                      [bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax]])
@@ -1635,7 +1660,7 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
         logging.warning("'augment' is deprecated. Use 'augmentation' instead.")
         if random.randint(0, 1):
             image = np.fliplr(image)
-            mask = np.fliplr(mask)
+            # mask = np.fliplr(mask)
 
     # Augmentation
     # This requires the imgaug lib (https://github.com/aleju/imgaug)
@@ -1655,23 +1680,24 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
 
         # Store shapes before augmentation to compare
         image_shape = image.shape
-        mask_shape = mask.shape
+        # mask_shape = mask.shape
         # Make augmenters deterministic to apply similarly to images and masks
         det = augmentation.to_deterministic()
         image = det.augment_image(image)
         # Change mask to np.uint8 because imgaug doesn't support np.bool
-        mask = det.augment_image(mask.astype(np.uint8),
-                                 hooks=imgaug.HooksImages(activator=hook))
+        # mask = det.augment_image(mask.astype(np.uint8),
+        #                          hooks=imgaug.HooksImages(activator=hook))
         # Verify that shapes didn't change
         assert image.shape == image_shape, "Augmentation shouldn't change image size"
-        assert mask.shape == mask_shape, "Augmentation shouldn't change mask size"
+        # assert mask.shape == mask_shape, "Augmentation shouldn't change mask size"
         # Change mask back to bool
-        mask = mask.astype(np.bool)
+        # mask = mask.astype(np.bool)
 
     # Note that some boxes might be all zeros if the corresponding mask got cropped out.
     # and here is to filter them out
-    _idx = np.sum(mask, axis=(0, 1)) > 0
-    class_ids = class_ids[_idx]
+    # _idx = np.sum(mask, axis=(0, 1)) > 0
+    # class_ids = class_ids[_idx]
+    class_ids = np.ones([bbox.shape[-1]], dtype=np.int32)
 
     # Active classes
     # Different datasets have different classes, so track the
@@ -2143,7 +2169,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 batch_gt_boxes = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
                 batch_gt_kp = np.zeros(
-                    (batch_size, config.MAX_GT_INSTANCES, num_points*2), dtype=np.float32)
+                    (batch_size, config.MAX_GT_INSTANCES, num_points, 2), dtype=np.float32)
                 if random_rois:
                     batch_rpn_rois = np.zeros(
                         (batch_size, rpn_rois.shape[0], 4), dtype=rpn_rois.dtype)
@@ -2169,7 +2195,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
             batch_images[b] = mold_image(image.astype(np.float32), config)
             batch_gt_class_ids[b, :gt_class_ids.shape[0]] = gt_class_ids
             batch_gt_boxes[b, :gt_boxes.shape[0]] = gt_boxes
-            batch_gt_kp[b, :len(gt_kp)] = np.reshape(gt_kp, -1)
+            batch_gt_kp[b, :len(gt_kp)] = gt_kp  #np.reshape(gt_kp, -1)
             if random_rois:
                 batch_rpn_rois[b] = rpn_rois
                 if detection_targets:
@@ -2270,7 +2296,7 @@ class MaskRCNN():
                 shape=[None, 4], name="input_gt_boxes", dtype=tf.float32)
 
             input_gt_kp = KL.Input(
-                shape=[None, self.num_points*2], name="input_kp", dtype=tf.float32)
+                shape=[None, self.num_points, 2], name="input_kp", dtype=tf.float32)
             # Normalize coordinates
             gt_boxes = KL.Lambda(lambda x: norm_boxes_graph(
                 x, K.shape(input_image)[1:3]))(input_gt_boxes)
@@ -2427,7 +2453,7 @@ class MaskRCNN():
             kp_loss = KL.Lambda(lambda x: mrcnn_keypoints_loss_graph(*x), name="mrcnn_kp_loss")(
                 [target_kp, mrcnn_keypoints])
             uncertainty_loss = KL.Lambda(lambda x: mrcnn_uncertainty_loss_graph(*x), name="mrcnn_uncertainty_loss")(
-                [target_kp, mrcnn_keypoints, mrcnn_uncertainty])
+                [target_kp, mrcnn_keypoints, mrcnn_uncertainty, target_bbox, mrcnn_bbox])
 
             # Model
             inputs = [input_image, input_image_meta, input_rpn_match, input_rpn_bbox, input_gt_class_ids,
