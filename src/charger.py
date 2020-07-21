@@ -40,11 +40,10 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 140
+    STEPS_PER_EPOCH = 500
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.00001
+    LEARNING_RATE = 0.0001
     NUM_POINTS = 5
-
 
 ############################################################
 #  Dataset
@@ -54,7 +53,7 @@ class ChargerDataset(utils.Dataset):
 
     def __init__(self, class_map=None):
         super().__init__(class_map=class_map)
-        self.increase_bbox_percent = 0.00
+        self.increase_bbox_percent = 0.03
 
     def load_charger(self, dataset_dir, subset):
         """Load a subset of the charger dataset.
@@ -118,10 +117,10 @@ class ChargerDataset(utils.Dataset):
             # ymin = float(bbox.find('ymin').text)
             # xmax = float(bbox.find('xmax').text)
             # ymax = float(bbox.find('ymax').text)
-            xmin = float(bbox.find('xmin').text) + self.increase_bbox_percent
-            ymin = float(bbox.find('ymin').text) + self.increase_bbox_percent
-            xmax = float(bbox.find('xmax').text) - self.increase_bbox_percent
-            ymax = float(bbox.find('ymax').text) - self.increase_bbox_percent
+            xmin = float(bbox.find('xmin').text) - self.increase_bbox_percent
+            ymin = float(bbox.find('ymin').text) - self.increase_bbox_percent
+            xmax = float(bbox.find('xmax').text) + self.increase_bbox_percent
+            ymax = float(bbox.find('ymax').text) + self.increase_bbox_percent
             bw = (xmax - xmin) * w
             bh = (ymax - ymin) * h
             for i in range(num_points):
@@ -175,10 +174,10 @@ class ChargerDataset(utils.Dataset):
         for obj in root.findall('object'):
             bndboxxml = obj.find('bndbox')
             if bndboxxml is not None:
-                xmin = int(float(bndboxxml.find('xmin').text) * w + self.increase_bbox_percent * w)
-                ymin = int(float(bndboxxml.find('ymin').text) * h + self.increase_bbox_percent * h)
-                xmax = int(float(bndboxxml.find('xmax').text) * w - self.increase_bbox_percent * w)
-                ymax = int(float(bndboxxml.find('ymax').text) * h - self.increase_bbox_percent * h)
+                xmin = int(float(bndboxxml.find('xmin').text) * w - self.increase_bbox_percent * w)
+                ymin = int(float(bndboxxml.find('ymin').text) * h - self.increase_bbox_percent * h)
+                xmax = int(float(bndboxxml.find('xmax').text) * w + self.increase_bbox_percent * w)
+                ymax = int(float(bndboxxml.find('ymax').text) * h + self.increase_bbox_percent * h)
 
         return xmin, ymin, xmax, ymax
 

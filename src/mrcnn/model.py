@@ -1315,32 +1315,26 @@ def build_uncertainty_graph(rois, feature_maps, image_meta, pool_size, num_class
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_uncertainty_conv2")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_uncertainty_bn2')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"), name="mrcnn_uncertainty_conv2")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_uncertainty_bn2')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_uncertainty_conv3")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_uncertainty_bn3')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"), name="mrcnn_uncertainty_conv3")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_uncertainty_bn3')(x, training=train_bn)
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"),
-                           name="mrcnn_uncertainty_conv4")(x)
-    x = KL.TimeDistributed(BatchNorm(),
-                           name='mrcnn_uncertainty_bn4')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"), name="mrcnn_uncertainty_conv4")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_uncertainty_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Flatten(),
-                           name="mrcnn_uncertainty_flat")(x)
+    x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_uncertainty_flat")(x)
 
-    x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)
+    # x = KL.TimeDistributed(KL.Dense((num_points * 2 + 1) * num_points, activation="elu"), name="mrcnn_uncertainty")(x)
+    # x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)  #uncertainty 10x10
 
-    x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)
+    x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)  # uncertainty 5x2x2
     x = KL.TimeDistributed(KL.Reshape([num_points, 3]))(x)
     print("x0", x)
     x = KL.TimeDistributed(KL.Lambda(lambda y: fill_triangular(y)))(x)
@@ -1493,12 +1487,11 @@ def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
 
 
 def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, target_bbox, mrcnn_bbox):
-    # loss = 0.0
+
     # pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 5, 3))
-    # pred_uncertainty += 1.0
     target_kp = K.reshape(target_kp, (200, 5, 2))
     pred_kp = K.reshape(pred_kp, (200, 5, 2))
-    #
+
     # L = K.stack([[pred_uncertainty[:, :, :, 0], K.zeros((1, 200, 5))],
     #              [pred_uncertainty[:, :, :, 1], pred_uncertainty[:, :, :, 2]]], axis=0)
     # L = K.permute_dimensions(L, pattern=(2, 3, 4, 0, 1))
@@ -2807,7 +2800,9 @@ class MaskRCNN():
                                         histogram_freq=0, write_graph=True, write_images=True),
             keras.callbacks.ModelCheckpoint(self.checkpoint_path,
                                             verbose=0, save_weights_only=True, period=1),
-            keras.callbacks.LearningRateScheduler(lr_scheduler)
+            # keras.callbacks.LearningRateScheduler(lr_scheduler),
+            keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2,
+                                              patience=3, min_lr=0.00001)
         ]
 
         # Add custom callbacks to the list
