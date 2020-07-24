@@ -53,7 +53,7 @@ class ChargerDataset(utils.Dataset):
 
     def __init__(self, class_map=None):
         super().__init__(class_map=class_map)
-        self.increase_bbox_percent = 0.03
+        self.increase_bbox_percent = 0.01
 
     def load_charger(self, dataset_dir, subset):
         """Load a subset of the charger dataset.
@@ -179,7 +179,7 @@ class ChargerDataset(utils.Dataset):
                 xmax = int(float(bndboxxml.find('xmax').text) * w + self.increase_bbox_percent * w)
                 ymax = int(float(bndboxxml.find('ymax').text) * h + self.increase_bbox_percent * h)
 
-        return xmin, ymin, xmax, ymax
+                return np.array([xmin, ymin, xmax, ymax])
 
     def image_reference(self, image_id):
         """Return the path of the image."""

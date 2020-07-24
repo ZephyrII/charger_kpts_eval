@@ -42,8 +42,8 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model_front = "/root/share/tf/Keras/4_06_PP_5"
-        # path_to_model_front = "/root/share/tf/Keras/29_06_PP_5_separate_uncertainty"
-        path_to_model_front = "/root/share/tf/Keras/20_07_new_dataset"
+        path_to_model_front = "/root/share/tf/Keras/22_07_aug_960"
+        # path_to_model_front = "/root/share/tf/Keras/22_07_residual_kp_big_head"
         # path_to_model_front = "/root/share/tf/Keras/3_07_PP_5_separate_uncertainty_UGLLI_loss"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
         self.equalize_histogram = False
@@ -71,7 +71,7 @@ class DetectorNode:
         self.gt_pose = None
         # self.gt_mat = None
         self.frame_gt = None
-        self.frame_scale = None
+        # self.frame_scale = None
         # Detection performance
         self.all_frames = 0
         self.frames_sent_to_detector = 0
@@ -84,7 +84,8 @@ class DetectorNode:
         # Initialize detector
         self.pointgrey_frame_shape = (5, 5)  # self.get_image_shape(self.pointgrey_topic)
         self.frame_shape = self.get_image_shape(self.blackfly_topic)
-        self.detector = Detector(path_to_model_front, path_to_pole_model, path_to_model_bottom=path_to_model_bottom)
+        self.detector = Detector(path_to_model_front,
+                                 path_to_pole_model)  # , path_to_model_bottom=path_to_model_bottom)
         self.detector.init_size(self.frame_shape)
         # self.detector.init_size((5000,5000))
         self.pose_estimator = PoseEstimator(self.blackfly_camera_matrix)
@@ -106,7 +107,7 @@ class DetectorNode:
             if self.blackfly_image is not None:  # and self.pointgrey_image is not None:
                 # self.frame_gt = self.gt_pose
                 # self.frame_pitch = self.pitch
-                self.frame_scale = self.detector.scale
+                # self.frame_scale = self.detector.scale
                 k = cv2.waitKey(1)
                 if k == ord('q') or k == 27:
                     exit(0)

@@ -127,8 +127,8 @@ class Config(object):
     #         IMAGE_MAX_DIM is not used in this mode.
     IMAGE_RESIZE_MODE = "square"
     IMAGE_MIN_DIM = 100
-    IMAGE_MAX_DIM = 1280
-    # IMAGE_MAX_DIM = 960
+    # IMAGE_MAX_DIM = 1280
+    IMAGE_MAX_DIM = 960
     # Minimum scaling ratio. Checked after MIN_IMAGE_DIM and can force further
     # up scaling. For example, if set to 2 then images are scaled up to double
     # the width and height, or more, even if MIN_IMAGE_DIM doesn't require it.
@@ -155,20 +155,21 @@ class Config(object):
     # Pooled ROIs
     POOL_SIZE = 7
     MASK_POOL_SIZE = 24
+    # MASK_POOL_SIZE = 32
 
     # Shape of output mask
     # To change this you also need to change the neural network mask branch
     MASK_SHAPE = [28, 28]
 
     # Maximum number of ground truth instances to use in one image
-    MAX_GT_INSTANCES = 100
+    MAX_GT_INSTANCES = 10
 
     # Bounding box refinement standard deviation for RPN and final detections.
     RPN_BBOX_STD_DEV = np.array([0.1, 0.1, 0.2, 0.2])
     BBOX_STD_DEV = np.array([0.1, 0.1, 0.2, 0.2])
 
     # Max number of final detections
-    DETECTION_MAX_INSTANCES = 100
+    DETECTION_MAX_INSTANCES = 10
 
     # Minimum probability value to accept a detected instance
     # ROIs below this threshold are skipped
@@ -194,8 +195,8 @@ class Config(object):
         "rpn_bbox_loss": 1.,
         "mrcnn_class_loss": 1.,
         "mrcnn_bbox_loss": 1.,
-        "mrcnn_kp_loss": 500.,
-        "mrcnn_uncertainty_loss": 10.
+        "mrcnn_kp_loss": 100.,
+        "mrcnn_uncertainty_loss": 1.
     }
 
     # Use RPN ROIs or externally generated ROIs for training

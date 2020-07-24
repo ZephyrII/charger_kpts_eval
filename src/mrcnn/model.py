@@ -23,6 +23,7 @@ import keras.backend as K
 import keras.layers as KL
 import keras.engine as KE
 import keras.models as KM
+import cv2
 
 from mrcnn import utils
 
@@ -109,6 +110,7 @@ def identity_block(input_tensor, kernel_size, filters, stage, block,
     conv_name_base = 'res' + str(stage) + block + '_branch'
     bn_name_base = 'bn' + str(stage) + block + '_branch'
 
+
     x = KL.Conv2D(nb_filter1, (1, 1), name=conv_name_base + '2a',
                   use_bias=use_bias)(input_tensor)
     x = BatchNorm(name=bn_name_base + '2a')(x, training=train_bn)
@@ -125,6 +127,41 @@ def identity_block(input_tensor, kernel_size, filters, stage, block,
 
     x = KL.Add()([x, input_tensor])
     x = KL.Activation('relu', name='res' + str(stage) + block + '_out')(x)
+    return x
+
+
+def identity_block_kp(input_tensor, kernel_size, filters, stage, block,
+                      use_bias=True, train_bn=True):
+    """The identity_block is the block that has no conv layer at shortcut
+    # Arguments
+        input_tensor: input tensor
+        kernel_size: default 3, the kernel size of middle conv layer at main path
+        filters: list of integers, the nb_filters of 3 conv layer at main path
+        stage: integer, current stage label, used for generating layer names
+        block: 'a','b'..., current block label, used for generating layer names
+        use_bias: Boolean. To use or not use a bias in conv layers.
+        train_bn: Boolean. Train or freeze Batch Norm layers
+    """
+    nb_filter1, nb_filter2, nb_filter3 = filters
+    conv_name_base = 'mrcnn_kp_' + str(stage) + block + '_branch'
+    bn_name_base = 'mrcnn_kp_' + str(stage) + block + '_branch'
+
+    x = KL.TimeDistributed(KL.Conv2D(nb_filter1, (1, 1), name=conv_name_base + '2a',
+                                     use_bias=use_bias))(input_tensor)
+    x = BatchNorm(name=bn_name_base + '2a')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(nb_filter2, (kernel_size, kernel_size), padding='same',
+                                     name=conv_name_base + '2b', use_bias=use_bias))(x)
+    x = BatchNorm(name=bn_name_base + '2b')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(nb_filter3, (1, 1), name=conv_name_base + '2c',
+                                     use_bias=use_bias))(x)
+    x = BatchNorm(name=bn_name_base + '2c')(x, training=train_bn)
+
+    x = KL.Add()([x, input_tensor])
+    x = KL.Activation('relu', name='mrcnn_kp_' + str(stage) + block + '_out')(x)
     return x
 
 
@@ -166,6 +203,47 @@ def conv_block(input_tensor, kernel_size, filters, stage, block,
 
     x = KL.Add()([x, shortcut])
     x = KL.Activation('relu', name='res' + str(stage) + block + '_out')(x)
+    return x
+
+
+def conv_block_kp(input_tensor, kernel_size, filters, stage, block,
+                  strides=(2, 2), use_bias=True, train_bn=True):
+    """conv_block is the block that has a conv layer at shortcut
+    # Arguments
+        input_tensor: input tensor
+        kernel_size: default 3, the kernel size of middle conv layer at main path
+        filters: list of integers, the nb_filters of 3 conv layer at main path
+        stage: integer, current stage label, used for generating layer names
+        block: 'a','b'..., current block label, used for generating layer names
+        use_bias: Boolean. To use or not use a bias in conv layers.
+        train_bn: Boolean. Train or freeze Batch Norm layers
+    Note that from stage 3, the first conv layer at main path is with subsample=(2,2)
+    And the shortcut should have subsample=(2,2) as well
+    """
+    nb_filter1, nb_filter2, nb_filter3 = filters
+    conv_name_base = 'mrcnn_kp_' + str(stage) + block + '_branch'
+    bn_name_base = 'mrcnn_kp_' + str(stage) + block + '_branch'
+
+    x = KL.TimeDistributed(KL.Conv2D(nb_filter1, (1, 1), strides=strides,
+                                     name=conv_name_base + '2a', use_bias=use_bias))(input_tensor)
+    x = BatchNorm(name=bn_name_base + '2a')(x, training=train_bn)
+    x = KL.TimeDistributed(KL.Activation('relu'))(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(nb_filter2, (kernel_size, kernel_size), padding='same',
+                                     name=conv_name_base + '2b', use_bias=use_bias))(x)
+    x = BatchNorm(name=bn_name_base + '2b')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(nb_filter3, (1, 1), name=conv_name_base +
+                                                              '2c', use_bias=use_bias))(x)
+    x = BatchNorm(name=bn_name_base + '2c')(x, training=train_bn)
+
+    shortcut = KL.TimeDistributed(KL.Conv2D(nb_filter3, (1, 1), strides=strides,
+                                            name=conv_name_base + '1', use_bias=use_bias))(input_tensor)
+    shortcut = BatchNorm(name=bn_name_base + '1')(shortcut, training=train_bn)
+
+    x = KL.Add()([x, shortcut])
+    x = KL.Activation('relu', name='mrcnn_kp_' + str(stage) + block + '_out')(x)
     return x
 
 
@@ -1246,6 +1324,26 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     # ROI Pooling
     # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
     x = PyramidROIAlign([pool_size, pool_size], name="roi_align_kp")([rois, image_meta] + feature_maps)
+    print("xxxxxx", x)
+
+    # Resnet
+    # x = conv_block_kp(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1), train_bn=train_bn)
+    # x = identity_block_kp(x, 3, [64, 64, 256], stage=2, block='b', train_bn=train_bn)
+    # x = identity_block_kp(x, 3, [64, 64, 256], stage=2, block='c', train_bn=train_bn)
+    # x = conv_block_kp(x, 3, [128, 128, 512], stage=3, block='a', train_bn=train_bn)
+    # x = identity_block_kp(x, 3, [128, 128, 512], stage=3, block='b', train_bn=train_bn)
+    # x = identity_block_kp(x, 3, [128, 128, 512], stage=3, block='c', train_bn=train_bn)
+    # x = identity_block_kp(x, 3, [256, 256, 512], stage=3, block='d', train_bn=train_bn)
+    # x = conv_block_kp(x, 3, [512, 512, 1024], stage=4, block='a', train_bn=train_bn)
+    # for i in range(8):
+    #     x = identity_block_kp(x, 3, [1024, 1024, 1024], stage=4, block=chr(98 + i), train_bn=train_bn)
+    #
+    # x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_kp_flat")(x)
+    #
+    # x = KL.TimeDistributed(KL.Dense(num_points * 2, activation="sigmoid"), name="mrcnn_kp")(x)
+    # x = KL.TimeDistributed(KL.Reshape([num_points, 2]))(x)
+    # return x
+    # Resnet
 
     # Conv layers
     x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv1")(x)
@@ -1285,7 +1383,7 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
 
     x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_kp_flat")(x)
 
-    x = KL.TimeDistributed(KL.Dense(num_points * 2, activation="sigmoid"), name="mrcnn_kp")(x)
+    x = KL.TimeDistributed(KL.Dense(num_points * 2), name="mrcnn_kp")(x)
     x = KL.TimeDistributed(KL.Reshape([num_points, 2]))(x)
     return x
 
@@ -1335,6 +1433,7 @@ def build_uncertainty_graph(rois, feature_maps, image_meta, pool_size, num_class
     # x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)  #uncertainty 10x10
 
     x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)  # uncertainty 5x2x2
+    x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)  #uncertainty 10x10
     x = KL.TimeDistributed(KL.Reshape([num_points, 3]))(x)
     print("x0", x)
     x = KL.TimeDistributed(KL.Lambda(lambda y: fill_triangular(y)))(x)
@@ -1487,67 +1586,46 @@ def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
 
 
 def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, target_bbox, mrcnn_bbox):
+    print("target_bbox", target_bbox)
+    bw_target = K.repeat_elements(K.expand_dims(K.abs(target_bbox[:, :, 3:4] - target_bbox[:, :, 1:2]), axis=-2), 5,
+                                  axis=-2)
+    bh_target = K.repeat_elements(K.expand_dims(K.abs(target_bbox[:, :, 2:3] - target_bbox[:, :, 0:1]), axis=-2), 5,
+                                  axis=-2)
+    print("bw_target", bw_target)
+    # bw_pred = K.abs(mrcnn_bbox[:, :, :, 3] - mrcnn_bbox[:, :, :, 1])
+    # bh_pred = K.abs(mrcnn_bbox[:, :, :, 2] - mrcnn_bbox[:, :, :, 0])
+    target_kp = target_kp * K.concatenate([bw_target, bh_target], axis=-1)
+    print("target_kp", target_kp)
+    print("pred_kp", pred_kp)
+    print(K.concatenate([bw_target, bh_target], axis=-1))
+    pred_kp = pred_kp * K.concatenate([bw_target, bh_target], axis=-1)
 
-    # pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 5, 3))
-    target_kp = K.reshape(target_kp, (200, 5, 2))
-    pred_kp = K.reshape(pred_kp, (200, 5, 2))
+    sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)))  # , axes=(4, 3))
 
-    # L = K.stack([[pred_uncertainty[:, :, :, 0], K.zeros((1, 200, 5))],
-    #              [pred_uncertainty[:, :, :, 1], pred_uncertainty[:, :, :, 2]]], axis=0)
-    # L = K.permute_dimensions(L, pattern=(2, 3, 4, 0, 1))
-    # L = L[0]
-    # sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 3, 2)), axes=(4, 3))
-    # sigma_loss = K.mean(sigma[:, :, 0, 0] * sigma[:, :, 1, 1] - sigma[:, :, 0, 1] * sigma[:, :, 1, 0])
-    #
-    # inv_sigma = tf.linalg.inv(sigma)
-    #
-    # mahalanobis = K.batch_dot(target_kp - pred_kp, inv_sigma)
-    # mahalanobis = K.batch_dot(mahalanobis, target_kp - pred_kp)
-    # loss += K.mean(mahalanobis) + K.log(sigma_loss)
-
-    # pred_uncertainty = K.reshape(pred_uncertainty, (1, 200, 5, 3))
-    # pred_uncertainty += 1.0
-    # print(target_bbox)
-    # print(mrcnn_bbox)
-    # bw_target = K.abs(target_bbox[0, :, 3] - target_bbox[0, :, 1])
-    # bh_target = K.abs(target_bbox[0, :, 2] - target_bbox[0, :, 0])
-    # bw_pred = K.abs(mrcnn_bbox[0, :, 0, 3] - mrcnn_bbox[0, :, 0, 1])
-    # bh_pred = K.abs(mrcnn_bbox[0, :, 0, 2] - mrcnn_bbox[0, :, 0, 0])
-    # target_kp = K.reshape(target_kp, (200, 5, 2))*K.repeat(K.stack([bw_target, bh_target], axis=-1), 5)
-    # print("ttK", K.repeat(K.stack([bw_target, bh_target], axis=-1), 5))
-    # print(K.stack([bw_target, bh_target], axis=-1))
-    # pred_kp = K.reshape(pred_kp, (200, 5, 2))*K.repeat(K.stack([bw_pred, bh_pred], axis=-1), 5)
-    # print("Lshape", L.shape)
-    L = L[0]
-    sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 3, 2)))  # , axes=(4, 3))
-    # print("bw_pred", bw_pred)
-    # print("sigma[0, 0]", sigma[:, :, 0, 0])
-    # bw_pred = K.expand_dims(bw_pred, axis=-1)
-    # bh_pred = K.expand_dims(bh_pred, axis=-1)
-    # sigma = K.stack([K.stack([sigma[:, :, 0, 0] * K.repeat_elements(bw_pred, 5, axis=-1), sigma[:, :, 0, 1] * K.sqrt(K.repeat_elements(bw_pred, 5, axis=-1)) * K.sqrt(K.repeat_elements(bh_pred, 5, axis=-1))], axis=-1),
-    #                  K.stack([sigma[:, :, 1, 0] * K.sqrt(K.repeat_elements(bw_pred, 5, axis=-1)) * K.sqrt(K.repeat_elements(bh_pred, 5, axis=-1)), sigma[:, :, 1, 1] * K.repeat_elements(bh_pred, 5, axis=-1)], axis=-1)], axis=-1)
-    # sigma = np.array([[sigma[0, 0] * bw_pred, sigma[0, 1] * K.sqrt(bw_pred) * K.sqrt(bh_pred)],
-    #                   [sigma[1, 0] * K.sqrt(bw_pred) * K.sqrt(bh_pred), sigma[1, 1] * bh_pred]])
+    # # print("bw_pred", bw_pred)
+    # bw_target = bw_target[:, :, :, 0]  #TODO clean this up
+    # bh_target = bh_target[:, :, :, 0]
+    # print("bw_target", bw_target)
     # print("sigma", sigma)
-    sigma_loss = sigma
+    # sigma = K.stack([K.stack([sigma[:, :, :, 0, 0] * bw_target, sigma[:, :, :, 0, 1] * K.sqrt(bw_target) * K.sqrt(bh_target)], axis=-1),
+    #                  K.stack([sigma[:, :, :, 1, 0] * K.sqrt(bw_target) * K.sqrt(bh_target), sigma[:, :, :, 1, 1] * bh_target], axis=-1)], axis=-1)
     # sigma_loss = K.log(sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0])
+
+    sigma_loss = sigma
+
+
     # sigma = K.print_tensor(sigma, "mysigma")
     # sigma = tf.Print(sigma, [sigma], summarize=-1)
 
+    # det = sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0]
     inv_sigma = tf.linalg.inv(sigma)
+    # inv_sigma = K.stack([K.stack([sigma[:, :, 1, 1] / det, -sigma[:, :, 0, 1] / det], axis=-1),
+    #                  K.stack([-sigma[:, :, 1, 0] / det, sigma[:, :, 0, 0] / det], axis=-1)], axis=-1)
 
-    # mahalanobis = K.batch_dot(K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
-    #                                     K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
-    #                                     (200, 5, 1, 2)), inv_sigma)
     # print("inv_sigma",inv_sigma)
     # print("target_kp",target_kp)
     # print("pred_kp",pred_kp)
     mahalanobis = K.batch_dot(K.expand_dims(target_kp - pred_kp, -2), inv_sigma)
-    # print("mahalanobis", mahalanobis)
-    # mahalanobis = K.batch_dot(mahalanobis,
-    #                           K.reshape(K.stack([target_kp[0, :, :, 0], target_kp[0, :, :, 1]], axis=-1) -
-    #                                     K.stack([pred_kp[0, :, :, 0], pred_kp[0, :, :, 1]], axis=-1),
-    #                                     (200, 5, 2, 1)))
     mahalanobis = K.batch_dot(mahalanobis, K.expand_dims(target_kp - pred_kp, -1))
     print("mahalanobis", mahalanobis)
     loss = K.mean(mahalanobis) + K.mean(sigma_loss)
@@ -1627,7 +1705,8 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     # mask, class_ids = dataset.load_mask(image_id)
     kp = dataset.load_kp(image_id, config.NUM_POINTS)
     xmin, ymin, xmax, ymax = dataset.load_bbox(image_id)
-    bbox = np.array([[ymin, xmin, ymax, xmax]])
+    bbox = dataset.load_bbox(image_id)
+    # bbox = np.array([ymin, xmin, ymax, xmax])
     # mask, class_ids, kp = dataset.query_gt(image_id)
 
 
@@ -1640,11 +1719,14 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
         mode=config.IMAGE_RESIZE_MODE)
     # mask = utils.resize_mask(mask, scale, padding, crop)
     bbox = bbox * scale
-    top_pad = 0  # (config.IMAGE_MAX_DIM - 720) // 2
-    bbox = np.array([[bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax],
-                     [bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax],
-                     [bbox[0, 0] + top_pad, xmin, bbox[0, 2] + top_pad, xmax]])
-
+    # disp = np.copy(image)
+    # cv2.rectangle(disp, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (0, 0, 255), 4)
+    # cv2.imshow("lol", disp)
+    # cv2.waitKey(10)
+    # top_pad = 0  # (config.IMAGE_MAX_DIM - 720) // 2
+    bbox = np.array([[bbox[1], bbox[0], bbox[3], bbox[2]],
+                     [bbox[1], bbox[0], bbox[3], bbox[2]],
+                     [bbox[1], bbox[0], bbox[3], bbox[2]]])
 
 
     # Random horizontal flips.
@@ -2785,14 +2867,14 @@ class MaskRCNN():
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir)
 
-        def lr_scheduler(epoch):
-            if 5 < epoch < 15:
-                return 0.00001
-            elif 15 <= epoch < 20:
-                return 0.000001
-            elif epoch >= 20:
-                return 0.0000001
-            return 0.0001
+        # def lr_scheduler(epoch):
+        #     if 5 < epoch < 15:
+        #         return 0.00001
+        #     elif 15 <= epoch < 20:
+        #         return 0.000001
+        #     elif epoch >= 20:
+        #         return 0.0000001
+        #     return 0.0001
 
         # Callbacks
         callbacks = [
@@ -2802,7 +2884,7 @@ class MaskRCNN():
                                             verbose=0, save_weights_only=True, period=1),
             # keras.callbacks.LearningRateScheduler(lr_scheduler),
             keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.2,
-                                              patience=3, min_lr=0.00001)
+                                              patience=3, verbose=1)
         ]
 
         # Add custom callbacks to the list
