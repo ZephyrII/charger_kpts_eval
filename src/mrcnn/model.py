@@ -675,7 +675,7 @@ class PyramidROIAlign(KE.Layer):
         # the fact that our coordinates are normalized here.
         # e.g. a 224x224 ROI (in pixels) maps to P4
         image_area = tf.cast(image_shape[0] * image_shape[1], tf.float32)
-        roi_level = log2_graph(tf.sqrt(h * w) / (224.0 / tf.sqrt(image_area)))
+        roi_level = log2_graph(tf.sqrt(h * w) / (960.0 / tf.sqrt(image_area)))
         roi_level = tf.minimum(5, tf.maximum(
             2, 4 + tf.cast(tf.round(roi_level), tf.int32)))
         roi_level = tf.squeeze(roi_level, 2)
@@ -1423,7 +1423,7 @@ def build_uncertainty_graph(rois, feature_maps, image_meta, pool_size, num_class
     x = KL.Activation('relu')(x)
     # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"), name="mrcnn_uncertainty_conv4")(x)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_uncertainty_conv4")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_uncertainty_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
@@ -1575,8 +1575,28 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
     return loss
 
 
-def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
-    loss = keras.losses.mean_squared_error(target_kp, pred_kp)
+def mrcnn_keypoints_loss_graph(target_kp, pred_kp, target_class_ids):
+    # print("target_kp", target_kp)
+    target_class_ids = K.reshape(target_class_ids, (-1,))
+    target_kp = K.reshape(target_kp, (-1, target_kp.shape[2], target_kp.shape[3]))
+    pred_kp = K.reshape(pred_kp, (-1, pred_kp.shape[2], pred_kp.shape[3]))
+    # print("target_class_ids", target_class_ids)
+    # print("target_kp", target_kp)
+    # print("pred_kp", pred_kp)
+
+    positive_ix = tf.where(target_class_ids > 0)[:, 0]
+    # print("positive_ix", positive_ix)
+
+    # print("", )
+    target_kp = tf.gather(target_kp, positive_ix)
+    print("target_kp", target_kp)
+    pred_kp = tf.gather(pred_kp, positive_ix)
+    print("pred_kp", pred_kp)
+
+    loss = K.switch(tf.size(target_kp) > 0,
+                    keras.losses.mean_squared_error(target_kp, pred_kp),
+                    tf.constant(0.0))
+    # loss = keras.losses.mean_squared_error(target_kp, pred_kp)
     # print(target_kp.shape[-1])
     # loss_uncertainty = keras.losses.mean_squared_error(target_kp - pred_kp[target_kp.shape[-1]:],
     #                                                    pred_kp[:target_kp.shape[-1]])
@@ -1585,50 +1605,75 @@ def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
     return loss  # +loss_uncertainty
 
 
-def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, target_bbox, mrcnn_bbox):
-    print("target_bbox", target_bbox)
-    bw_target = K.repeat_elements(K.expand_dims(K.abs(target_bbox[:, :, 3:4] - target_bbox[:, :, 1:2]), axis=-2), 5,
-                                  axis=-2)
-    bh_target = K.repeat_elements(K.expand_dims(K.abs(target_bbox[:, :, 2:3] - target_bbox[:, :, 0:1]), axis=-2), 5,
-                                  axis=-2)
-    print("bw_target", bw_target)
-    # bw_pred = K.abs(mrcnn_bbox[:, :, :, 3] - mrcnn_bbox[:, :, :, 1])
-    # bh_pred = K.abs(mrcnn_bbox[:, :, :, 2] - mrcnn_bbox[:, :, :, 0])
+def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, target_bbox, rois, pred_bbox, target_class_ids):
+    # print("pred_kp", pred_kp)
+    # print("target_bbox", target_bbox)
+    # print("pred_bbox", pred_bbox)
+    target_class_ids = K.reshape(target_class_ids, (-1,))
+    target_bbox = K.reshape(target_bbox, (-1, 4))
+
+    # Only positive ROIs contribute to the loss. And only
+    # the right class_id of each ROI. Get their indices.
+    positive_roi_ix = tf.where(target_class_ids > 0)[:, 0]
+    positive_roi_class_ids = tf.cast(
+        tf.gather(target_class_ids, positive_roi_ix), tf.int64)
+    indices = tf.stack([positive_roi_ix, positive_roi_class_ids], axis=1)
+
+    # Gather the deltas (predicted and true) that contribute to loss
+    target_bbox = tf.gather(target_bbox, positive_roi_ix)
+
+    target_kp = K.reshape(target_kp, (-1, target_kp.shape[2], target_kp.shape[3]))
+
+    target_kp = tf.gather(target_kp, positive_roi_ix)
+
+    pred_bbox = K.reshape(pred_bbox, (-1, K.int_shape(pred_bbox)[2], 4))
+    pred_bbox = tf.gather_nd(pred_bbox, indices)
+    rois = tf.gather_nd(rois, indices)
+    print("rois", rois[0])
+    print("pred_bbox", pred_bbox)
+
+    pred_bbox = apply_box_deltas_graph(
+        rois, pred_bbox * K.constant([0.1, 0.1, 0.2, 0.2], dtype=tf.float32))
+    print("pred_bbox", pred_bbox)
+
+    pred_kp = K.reshape(pred_kp, (-1, pred_kp.shape[2], pred_kp.shape[3]))
+    pred_kp = tf.gather(pred_kp, positive_roi_ix)
+
+    # print("L", L)
+    L = K.reshape(L, (-1, L.shape[2], L.shape[3], L.shape[4]))
+    L = tf.gather(L, positive_roi_ix)
+    # print("L", L)
+    #
+    # print("target_bbox", target_bbox)
+    # print("pred_bbox", pred_bbox)
+
+    # pred_bbox = K.print_tensor(pred_bbox, "BHP")
+    # target_bbox = K.print_tensor(target_bbox, "BHT")
+
+    # TODO: get real image size
+    bw_target = K.expand_dims(K.abs(target_bbox[:, 3:4] - target_bbox[:, 1:2]), axis=-2) * K.constant(960,
+                                                                                                      dtype=tf.float32)
+    bh_target = K.expand_dims(K.abs(target_bbox[:, 2:3] - target_bbox[:, 0:1]), axis=-2) * K.constant(960,
+                                                                                                      dtype=tf.float32)
+    bw_pred = K.expand_dims(K.abs(pred_bbox[:, 3:4] - pred_bbox[:, 1:2]), axis=-2) * K.constant(960, dtype=tf.float32)
+    bh_pred = K.expand_dims(K.abs(pred_bbox[:, 2:3] - pred_bbox[:, 0:1]), axis=-2) * K.constant(960, dtype=tf.float32)
+
+
     target_kp = target_kp * K.concatenate([bw_target, bh_target], axis=-1)
-    print("target_kp", target_kp)
-    print("pred_kp", pred_kp)
-    print(K.concatenate([bw_target, bh_target], axis=-1))
-    pred_kp = pred_kp * K.concatenate([bw_target, bh_target], axis=-1)
+    pred_kp = pred_kp * K.concatenate([bw_pred, bh_pred], axis=-1)
 
-    sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)))  # , axes=(4, 3))
-
-    # # print("bw_pred", bw_pred)
-    # bw_target = bw_target[:, :, :, 0]  #TODO clean this up
-    # bh_target = bh_target[:, :, :, 0]
-    # print("bw_target", bw_target)
-    # print("sigma", sigma)
-    # sigma = K.stack([K.stack([sigma[:, :, :, 0, 0] * bw_target, sigma[:, :, :, 0, 1] * K.sqrt(bw_target) * K.sqrt(bh_target)], axis=-1),
-    #                  K.stack([sigma[:, :, :, 1, 0] * K.sqrt(bw_target) * K.sqrt(bh_target), sigma[:, :, :, 1, 1] * bh_target], axis=-1)], axis=-1)
-    # sigma_loss = K.log(sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0])
-
-    sigma_loss = sigma
-
-
-    # sigma = K.print_tensor(sigma, "mysigma")
-    # sigma = tf.Print(sigma, [sigma], summarize=-1)
-
-    # det = sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0]
+    sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 3, 2)))  # , axes=(4, 3))
     inv_sigma = tf.linalg.inv(sigma)
-    # inv_sigma = K.stack([K.stack([sigma[:, :, 1, 1] / det, -sigma[:, :, 0, 1] / det], axis=-1),
-    #                  K.stack([-sigma[:, :, 1, 0] / det, sigma[:, :, 0, 0] / det], axis=-1)], axis=-1)
 
-    # print("inv_sigma",inv_sigma)
-    # print("target_kp",target_kp)
-    # print("pred_kp",pred_kp)
+    sigma_loss = K.log(sigma[:, :, 0, 0] * sigma[:, :, 1, 1] - sigma[:, :, 0, 1] * sigma[:, :, 1, 0])
+    # sigma_loss = tf.linalg.det(sigma)
     mahalanobis = K.batch_dot(K.expand_dims(target_kp - pred_kp, -2), inv_sigma)
     mahalanobis = K.batch_dot(mahalanobis, K.expand_dims(target_kp - pred_kp, -1))
-    print("mahalanobis", mahalanobis)
-    loss = K.mean(mahalanobis) + K.mean(sigma_loss)
+    # mahalanobis = K.batch_dot(K.reshape(target_kp - pred_kp, (-1, 1, 1, 8)), inv_sigma)
+    # mahalanobis = K.batch_dot(mahalanobis, K.reshape(target_kp - pred_kp, (-1, 1, 8, 1)))
+
+    loss = K.switch(tf.size(target_kp) > 0, K.mean(mahalanobis) + K.mean(sigma_loss), tf.constant(0.0))
+    # loss = K.switch(tf.size(target_kp) > 0, K.mean(mahalanobis[0]) + K.mean(sigma_loss), tf.constant(0.0))
 
     return loss
 
@@ -2526,9 +2571,9 @@ class MaskRCNN():
             # mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
             #     [target_mask, target_class_ids, mrcnn_mask])
             kp_loss = KL.Lambda(lambda x: mrcnn_keypoints_loss_graph(*x), name="mrcnn_kp_loss")(
-                [target_kp, mrcnn_keypoints])
+                [target_kp, mrcnn_keypoints, target_class_ids])
             uncertainty_loss = KL.Lambda(lambda x: mrcnn_uncertainty_loss_graph(*x), name="mrcnn_uncertainty_loss")(
-                [target_kp, mrcnn_keypoints, mrcnn_uncertainty, target_bbox, mrcnn_bbox])
+                [target_kp, mrcnn_keypoints, mrcnn_uncertainty, gt_boxes, rois, mrcnn_bbox, target_class_ids])
 
             # Model
             inputs = [input_image, input_image_meta, input_rpn_match, input_rpn_bbox, input_gt_class_ids,
@@ -2844,6 +2889,10 @@ class MaskRCNN():
         # Pre-defined layer regular expressions
         layer_regex = {
             # all layers but the backbone
+            "uncertainty": r"(mrcnn\_uncertainty.*)",
+            "3+_not_uncertainty": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
+            "1+_not_uncertainty": r"(res1.*)|(bn1.*)|(res2.*)|(bn2.*)|(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
+            "not_uncertainty": r"(res5.*)|(bn5.*)|(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
             "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             # From a specific Resnet stage and up
             "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",

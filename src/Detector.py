@@ -90,7 +90,7 @@ class ChargerConfig(Config):
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
     # LEARNING_RATE = 0.001
-    NUM_POINTS = 5
+    NUM_POINTS = 4
 
 
 class Detector:
@@ -98,8 +98,8 @@ class Detector:
     def __init__(self, path_to_model, path_to_pole_model, path_to_model_bottom=None):
         np.set_printoptions(suppress=True)
         np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
-        self.slice_size = (960, 960)
         # self.slice_size = (1280, 1280)
+        self.slice_size = (960, 960)
         self.offset = (0, 0)
         self.scale = 1.0
         # self.scale = 0.7
@@ -110,7 +110,7 @@ class Detector:
         # self.contour = None
         self.frame_shape = None
         self.moving_avg_image = None
-        self.init_det = True
+        self.init_det = False
         self.bottom = False
         self.gt_kp = None
         self.gt_pose = None
@@ -158,7 +158,8 @@ class Detector:
         self.moving_avg_image = np.full(shape[:2], 100, dtype=np.uint8)
 
     def get_CNN_output(self, image_np):  # TODO: scale keypoints
-        # print("scale", self.scale, "\n\n")
+        print("scale", self.scale, "\n\n")
+        print("image_np.shape", image_np.shape)
         if self.bottom:
             r = self.det_model_bottom.detect([image_np], verbose=0)[0]
         else:
@@ -182,6 +183,8 @@ class Detector:
         # abs_ymax = np.min((int(roi[2] + self.offset[0]), self.frame_shape[0]))
         abs_xmax = int(roi[3] + self.offset[1])
         abs_ymax = int(roi[2] + self.offset[0])
+        print("offset", self.offset)
+        print("roi", roi)
         sigma_avg = []
         for i, kp in enumerate(kps):  # range(int(len(kps) / 2)):
             print("kp", kp)
@@ -199,14 +202,14 @@ class Detector:
             # print("gt_kp", int(self.gt_kp[i][0]), int(self.gt_kp[i][1]))
             # L = np.array([[L[i * 2], 0], [L[i * 2 + 1], L[i * 2 + 2]]])
             sigma = np.matmul(L[i], L[i].transpose())
-            sigma = np.array([[sigma[0, 0] * bw, sigma[0, 1] * np.sqrt(bw) * np.sqrt(bh)],
-                              [sigma[1, 0] * np.sqrt(bw) * np.sqrt(bh), sigma[1, 1] * bh]])  # TODO move to model.py
+            sigma = np.array([[sigma[0, 0], sigma[0, 1]],
+                              [sigma[1, 0], sigma[1, 1]]])  # TODO move to model.py
             # uncertainty.append((L[i * 2] * bw, L[i * 2 + 1] * bh))
             uncertainty.append(sigma)
             cv2.ellipse(image_np, (int(kp[0] * bw + roi[1]), int(kp[1] * bh + roi[0])),
                         (int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1]))), angle=0,
                         startAngle=0, endAngle=360, color=(0, 255, 255))
-            # print("sigma", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
+            print("sigma", np.sqrt(sigma[0, 0]), np.sqrt(sigma[1, 1]))
             # print(sigma)
             sigma_avg.append(np.sqrt(sigma[0, 0]))
             sigma_avg.append(np.sqrt(sigma[1, 1]))
@@ -240,7 +243,7 @@ class Detector:
             self.get_CNN_output(self.get_slice(frame))
         if len(self.detections) == 0:
             print("No detections")
-            self.init_det = True
+            # self.init_det = True #uncomment
         else:
             self.init_det = False
             self.get_best_detections()
@@ -248,20 +251,18 @@ class Detector:
             abs_xmin, abs_ymin, abs_xmax, abs_ymax = self.best_detection['abs_rect']
             width = abs_xmax - abs_xmin
             height = abs_ymax - abs_ymin
-            print("scale", self.scale)
-            print("width", width)
-            if width > self.slice_size[1] * self.charger_to_slice_ratio:
-                self.scale = self.slice_size[1] / width * self.charger_to_slice_ratio
-                y_off = int(
-                    np.max((0, np.min((abs_ymin + (abs_ymax - abs_ymin) / 2 - self.slice_size[0] / 2 / self.scale,
-                                       self.frame_shape[0] - (self.slice_size[0]) / self.scale)))))
-                x_off = int(
-                    np.max((0, np.min((abs_xmin + (abs_xmax - abs_xmin) / 2 - self.slice_size[1] / 2 / self.scale,
-                                       self.frame_shape[1] - (self.slice_size[1]) / self.scale)))))
+            # if width > self.slice_size[1] * self.charger_to_slice_ratio: #uncomment
+            #     self.scale = self.slice_size[1] / width * self.charger_to_slice_ratio
+            #     y_off = int(
+            #         np.max((0, np.min((abs_ymin + (abs_ymax - abs_ymin) / 2 - self.slice_size[0] / 2 / self.scale,
+            #                            self.frame_shape[0] - (self.slice_size[0]) / self.scale)))))
+            #     x_off = int(
+            #         np.max((0, np.min((abs_xmin + (abs_xmax - abs_xmin) / 2 - self.slice_size[1] / 2 / self.scale,
+            #                            self.frame_shape[1] - (self.slice_size[1]) / self.scale)))))
+            #
+            #     self.offset = (y_off, x_off)
+            #     self.offset = (int(self.offset[0] * self.scale), int(self.offset[1] * self.scale))
 
-                self.offset = (y_off, x_off)
-                self.offset = (int(self.offset[0] * self.scale), int(self.offset[1] * self.scale))
-                # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
             # if self.scale < 0.2:
             #     self.bottom = True
             #     self.scale = 0.7
@@ -281,8 +282,7 @@ class Detector:
         # cv2.waitKey(10)
         width, height = self.detect_pole(small_frame)
         if width > self.slice_size[1] * self.charger_to_slice_ratio:
-            self.scale = self.slice_size[1] / width * self.charger_to_slice_ratio
-            # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
+            # self.scale = self.slice_size[1] / width * self.charger_to_slice_ratio #uncomment
             frame = cv2.resize(frame, (0, 0), fx=self.scale, fy=self.scale)
             # self.frame_shape = frame.shape[:2]
             self.offset = (int(self.offset[0] * self.scale), int(self.offset[1] * self.scale))

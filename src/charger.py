@@ -40,10 +40,10 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 500
+    STEPS_PER_EPOCH = 10000
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.0001
-    NUM_POINTS = 5
+    LEARNING_RATE = 0.00001
+    NUM_POINTS = 4
 
 ############################################################
 #  Dataset
@@ -206,7 +206,7 @@ def train(model):
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
                 epochs=300,
-                layers='5+')
+                layers='not_uncertainty')
 
 
 ############################################################

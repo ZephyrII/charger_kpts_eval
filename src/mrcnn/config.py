@@ -125,7 +125,7 @@ class Config(object):
     #         on IMAGE_MIN_DIM and IMAGE_MIN_SCALE, then picks a random crop of
     #         size IMAGE_MIN_DIM x IMAGE_MIN_DIM. Can be used in training only.
     #         IMAGE_MAX_DIM is not used in this mode.
-    IMAGE_RESIZE_MODE = "square"
+    IMAGE_RESIZE_MODE = "none"
     IMAGE_MIN_DIM = 100
     # IMAGE_MAX_DIM = 1280
     IMAGE_MAX_DIM = 960
@@ -147,14 +147,14 @@ class Config(object):
     # enough positive proposals to fill this and keep a positive:negative
     # ratio of 1:3. You can increase the number of proposals by adjusting
     # the RPN NMS threshold.
-    TRAIN_ROIS_PER_IMAGE = 200
+    TRAIN_ROIS_PER_IMAGE = 100
 
     # Percent of positive ROIs used to train classifier/mask heads
     ROI_POSITIVE_RATIO = 0.33
 
     # Pooled ROIs
     POOL_SIZE = 7
-    MASK_POOL_SIZE = 24
+    MASK_POOL_SIZE = 36
     # MASK_POOL_SIZE = 32
 
     # Shape of output mask
@@ -195,8 +195,8 @@ class Config(object):
         "rpn_bbox_loss": 1.,
         "mrcnn_class_loss": 1.,
         "mrcnn_bbox_loss": 1.,
-        "mrcnn_kp_loss": 100.,
-        "mrcnn_uncertainty_loss": 1.
+        "mrcnn_kp_loss": 50.,
+        "mrcnn_uncertainty_loss": 0.
     }
 
     # Use RPN ROIs or externally generated ROIs for training
