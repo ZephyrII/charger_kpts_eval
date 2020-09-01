@@ -40,10 +40,10 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 500
+    STEPS_PER_EPOCH = 10000
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.0001
-    NUM_POINTS = 5
+    NUM_POINTS = 4
 
 ############################################################
 #  Dataset
@@ -53,7 +53,7 @@ class ChargerDataset(utils.Dataset):
 
     def __init__(self, class_map=None):
         super().__init__(class_map=class_map)
-        self.increase_bbox_percent = 0.01
+        self.increase_bbox_percent = 0.00
 
     def load_charger(self, dataset_dir, subset):
         """Load a subset of the charger dataset.
@@ -66,11 +66,30 @@ class ChargerDataset(utils.Dataset):
         # Train or validation dataset?
         assert subset in ["train", "val"]
         if subset == "val":
+            # pass
             dataset_dir = os.path.join(dataset_dir, 'val')
         annotations = os.listdir(os.path.join(dataset_dir, 'annotations'))
 
         # Add images
         for a in annotations:
+
+            # info = self.image_info[image_id]
+            # ann_fname = info['annotation']
+            tree = ET.parse(os.path.join(dataset_dir, 'annotations', a))
+            root = tree.getroot()
+            size = root.find('size')
+            w = int(size.find('width').text)
+            h = int(size.find('height').text)
+            for obj in root.findall('object'):
+                bndboxxml = obj.find('bndbox')
+                if bndboxxml is not None:
+                    xmin = int(float(bndboxxml.find('xmin').text) * w - self.increase_bbox_percent * w)
+                    ymin = int(float(bndboxxml.find('ymin').text) * h - self.increase_bbox_percent * h)
+                    xmax = int(float(bndboxxml.find('xmax').text) * w + self.increase_bbox_percent * w)
+                    ymax = int(float(bndboxxml.find('ymax').text) * h + self.increase_bbox_percent * h)
+
+                    # return
+
             image_path = os.path.join(dataset_dir, 'images', a[:-4]+'.png')
             image = skimage.io.imread(image_path)
             height, width = image.shape[:2]
@@ -81,7 +100,8 @@ class ChargerDataset(utils.Dataset):
                 path=image_path,
                 width=width, height=height,
                 mask=os.path.join(dataset_dir, 'labels', a[:-4]+'_label.png'),
-                annotation=os.path.join(dataset_dir, 'annotations', a))
+                annotation=os.path.join(dataset_dir, 'annotations', a),
+                bbox=np.array([xmin, ymin, xmax, ymax]))
 
     def load_mask(self, image_id):
         """Generate instance masks for an image.
@@ -101,6 +121,7 @@ class ChargerDataset(utils.Dataset):
 
     def load_kp(self, image_id, num_points):
 
+        xmin, ymin, xmax, ymax = self.image_info[image_id]['bbox']
         info = self.image_info[image_id]
         # print(image_id)
         ann_fname = info['annotation']
@@ -110,6 +131,7 @@ class ChargerDataset(utils.Dataset):
         size = root.find('size')
         w = int(size.find('width').text)
         h = int(size.find('height').text)
+        kp_maps = np.zeros((num_points, w, h), dtype=np.int32)
         for object in root.findall('object'):
             kps = object.find('keypoints')
             bbox = object.find('bndbox')
@@ -117,38 +139,27 @@ class ChargerDataset(utils.Dataset):
             # ymin = float(bbox.find('ymin').text)
             # xmax = float(bbox.find('xmax').text)
             # ymax = float(bbox.find('ymax').text)
-            xmin = float(bbox.find('xmin').text) - self.increase_bbox_percent
-            ymin = float(bbox.find('ymin').text) - self.increase_bbox_percent
-            xmax = float(bbox.find('xmax').text) + self.increase_bbox_percent
-            ymax = float(bbox.find('ymax').text) + self.increase_bbox_percent
+            xmin = float(bbox.find('xmin').text) * w - self.increase_bbox_percent
+            ymin = float(bbox.find('ymin').text) * h - self.increase_bbox_percent
+            xmax = float(bbox.find('xmax').text) * w + self.increase_bbox_percent
+            ymax = float(bbox.find('ymax').text) * h + self.increase_bbox_percent
             bw = (xmax - xmin) * w
             bh = (ymax - ymin) * h
             for i in range(num_points):
                 kp = kps.find('keypoint' + str(i))
-                keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-                                  (float(kp.find('y').text) - ymin) * h / bh))
-            # try:  # 5_points
-            #     kps.find('keypoint6').text
-            #     for i in range(num_points + 2):
-            #         if i == 1 or i == 2:
-            #             continue
-            #         kp = kps.find('keypoint' + str(i))
-            #         keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-            #                           (float(kp.find('y').text) - ymin) * h / bh))
-            # except:
-            #     for i in range(num_points):
-            #         if i == 2:
-            #             continue
-            #         kp = kps.find('keypoint' + str(i))
-            #         keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-            #                           (float(kp.find('y').text) - ymin) * h / bh))
+                point_size = 5
+                point_center = (
+                int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)),
+                int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)))
+                # kp_maps[i, int(float(kp.find('y').text)*h), int(float(kp.find('x').text)*w)] = 1.0
+                kp_maps[i, point_center[0] - point_size:point_center[0] + point_size,
+                point_center[1] - point_size:point_center[1] + point_size] = 255
+                # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (5,5), sigmaX=2)
+                # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (3,3), sigmaX=0)
+                # cv2.imshow('xddlol', kp_maps[i])
+                # cv2.waitKey(0)
 
-            # kp = kps.find('keypoint2')
-            # keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-            #                   (float(kp.find('y').text) - ymin) * h / bh))
-        # print("KP", len(keypoints))
-
-        return keypoints
+        return kp_maps
 
     def load_yaw(self, image_id):
 

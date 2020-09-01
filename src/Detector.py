@@ -90,7 +90,7 @@ class ChargerConfig(Config):
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
     # LEARNING_RATE = 0.001
-    NUM_POINTS = 5
+    NUM_POINTS = 4
 
 
 class Detector:
@@ -131,7 +131,7 @@ class Detector:
         model = modellib.MaskRCNN(mode="inference", config=config, model_dir=path_to_model)
 
         weights_path = model.find_last()
-        # weights_path = "/root/share/tf/Keras/17_07_new_dataset/charger20200717T1451/mask_rcnn_charger_0020.h5"
+        # weights_path = "/root/share/tf/Keras/31_08_heatmap/charger20200901T1045/mask_rcnn_charger_0002.h5"
 
         # Load weights
         # print("Loading weights ", weights_path)
@@ -158,67 +158,39 @@ class Detector:
         self.moving_avg_image = np.full(shape[:2], 100, dtype=np.uint8)
 
     def get_CNN_output(self, image_np):  # TODO: scale keypoints
-        # print("scale", self.scale, "\n\n")
+        # print("image_np", image_np, "\n\n")
         if self.bottom:
             r = self.det_model_bottom.detect([image_np], verbose=0)[0]
         else:
             r = self.det_model.detect([image_np], verbose=0)[0]
         # Color splash
         # splash = self. color_splash(image_np, r['masks'])
-        if len(r['rois']) == 0:
-            return
+        # if len(r['rois']) == 0:
+        #     return
         kps = r['kp'][0][0]
-        L = r["uncertainty"][0][0]
-        # print("r['rois']", r['rois'].shape)
-        roi = np.mean(r['rois'], axis=0)
-        # roi[2] = roi[2]+roi[2]-roi[0]
-        bh = roi[2] - roi[0]
-        bw = roi[3] - roi[1]
-        absolute_kp = []
-        uncertainty = []
-        abs_xmin = int(roi[1] + self.offset[1])
-        abs_ymin = int(roi[0] + self.offset[0])
-        # abs_xmax = np.min((int(roi[3] + self.offset[1]), self.frame_shape[1]))
-        # abs_ymax = np.min((int(roi[2] + self.offset[0]), self.frame_shape[0]))
-        abs_xmax = int(roi[3] + self.offset[1])
-        abs_ymax = int(roi[2] + self.offset[0])
-        sigma_avg = []
+        print("shape", kps.shape)
+        kps = np.transpose(kps, (2, 0, 1))
+        print("shape", kps.shape)
+
         for i, kp in enumerate(kps):  # range(int(len(kps) / 2)):
-            print("kp", kp)
-            absolute_kp.append(
-                (int(kp[0] * bw + self.offset[1] + roi[1]),
-                 int(kp[1] * bh + self.offset[0] + roi[0])))  # TODO reshape keypoints in model.py
-            cv2.circle(image_np, (int(kp[0] * bw + roi[1]), int(kp[1] * bh + roi[0])), 5, (0, 0, 255), -1)
-            # absolute_kp.append(
-            #     (int(kps[i * 2] * bw + self.offset[1] + roi[1]), int(kps[i * 2 + 1] * bh + self.offset[0] + roi[0]))) #TODO reshape keypoints in model.py
-            # cv2.circle(image_np, (int(kps[i * 2] * bw + roi[1]), int(kps[i * 2 + 1] * bh + roi[0])), 5, (0, 0, 255), -1)
-            # cv2.circle(image_np, (
-            #     int(self.gt_kp[i][0] * self.scale - self.offset[1]),
-            #     int(self.gt_kp[i][1] * self.scale - self.offset[0])),
-            #            3, (255, 255, 255), -1)
-            # print("gt_kp", int(self.gt_kp[i][0]), int(self.gt_kp[i][1]))
-            # L = np.array([[L[i * 2], 0], [L[i * 2 + 1], L[i * 2 + 2]]])
-            sigma = np.matmul(L[i], L[i].transpose())
-            sigma = np.array([[sigma[0, 0] * bw, sigma[0, 1] * np.sqrt(bw) * np.sqrt(bh)],
-                              [sigma[1, 0] * np.sqrt(bw) * np.sqrt(bh), sigma[1, 1] * bh]])  # TODO move to model.py
-            # uncertainty.append((L[i * 2] * bw, L[i * 2 + 1] * bh))
-            uncertainty.append(sigma)
-            cv2.ellipse(image_np, (int(kp[0] * bw + roi[1]), int(kp[1] * bh + roi[0])),
-                        (int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1]))), angle=0,
-                        startAngle=0, endAngle=360, color=(0, 255, 255))
-            # print("sigma", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
-            # print(sigma)
-            sigma_avg.append(np.sqrt(sigma[0, 0]))
-            sigma_avg.append(np.sqrt(sigma[1, 1]))
-        print("Sigma average", np.average(sigma_avg))
-        cv2.rectangle(image_np, (int(roi[1]), int(roi[0])), (int(roi[3]), int(roi[2])), (0, 255, 255), 2)
+            # kp = kp[50:-50, 50:-50]
+            coords = np.unravel_index(kp.argmax(), kp.shape)
+            kp = kp / np.max(kp)
+            kp = cv2.cvtColor(kp, cv2.COLOR_GRAY2BGR).astype(np.float)
+            # print("uq", np.unique(kp))
+            # print(coords)
+            alpha = 0.9
+            # out_img = cv2.addWeighted(kp, alpha, (image_np/255).astype(np.float), 1-alpha, 0)
+            cv2.circle(image_np, (coords[1], coords[0]), 10, (255, 255, 255), -1)
+        cv2.imshow("lol", np.sum(kps, axis=0))
+        cv2.waitKey(0)
+
         cv2.imshow('Detection', cv2.resize(image_np, (960, 960)))
         # print("uncert", kps[int(len(kps) / 2):])
 
-        absolute_kp_scaled = np.multiply(absolute_kp, 1 / self.scale)
-        detection = dict(score=r['scores'][0], abs_rect=np.array([abs_xmin, abs_ymin, abs_xmax, abs_ymax]) / self.scale,
-                         keypoints=absolute_kp_scaled, uncertainty=np.array(uncertainty))
-        self.detections.append(detection)
+        # detection = dict(score=r['scores'][0], abs_rect=np.array([abs_xmin, abs_ymin, abs_xmax, abs_ymax]) / self.scale,
+        #                  keypoints=absolute_kp_scaled, uncertainty=np.array(uncertainty))
+        # self.detections.append(detection)
 
     def detect(self, frame, gt_pose, gt_kp):
         # print("detector detect")
@@ -240,7 +212,7 @@ class Detector:
             self.get_CNN_output(self.get_slice(frame))
         if len(self.detections) == 0:
             print("No detections")
-            self.init_det = True
+            # self.init_det = True
         else:
             self.init_det = False
             self.get_best_detections()
@@ -279,25 +251,14 @@ class Detector:
     def init_detection(self, frame):
         small_frame = cv2.resize(frame, (self.slice_size[1], self.slice_size[0]))
         # cv2.waitKey(10)
-        width, height = self.detect_pole(small_frame)
-        if width > self.slice_size[1] * self.charger_to_slice_ratio:
-            self.scale = self.slice_size[1] / width * self.charger_to_slice_ratio
-            # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
-            frame = cv2.resize(frame, (0, 0), fx=self.scale, fy=self.scale)
-            # self.frame_shape = frame.shape[:2]
-            self.offset = (int(self.offset[0] * self.scale), int(self.offset[1] * self.scale))
-            # y_off = int(np.max((0, np.min((self.offset[0], self.frame_shape[0] - self.slice_size[0])))))
-            # x_off = int(np.max((0, np.min((self.offset[1], self.frame_shape[1] - self.slice_size[1])))))
-            # self.offset = (y_off, x_off)
-        print("self.offset", self.offset)
-        print("scale", self.scale)
-        if width == 0:
-            return
-        try:
-            cv2.imshow("pole", self.get_slice(frame))
-            cv2.waitKey(10)
-        except cv2.error:
-            print("self.get_slice(frame).shape", self.get_slice(frame).shape)
+        xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
+        frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
+
+        # try:
+        #     cv2.imshow("pole", self.get_slice(frame))
+        #     cv2.waitKey(10)
+        # except cv2.error:
+        #     print("self.get_slice(frame).shape", self.get_slice(frame).shape)
         # print("self.get_slice(frame).shape", self.get_slice(frame).shape)
         self.get_CNN_output(self.get_slice(frame))
 
@@ -336,24 +297,9 @@ class Detector:
 
         if len(detections) > 0:
             best_detection = sorted(detections, key=lambda k: k['score'], reverse=True)[0]
-            # print("self.frame_shape", self.frame_shape)
-            y_off = int(np.max((0, np.min(
-                (best_detection['abs_rect'][1] - self.slice_size[0] / 2, self.frame_shape[0] - self.slice_size[0])))))
-            # x_off = int(np.max((0, np.min((best_detection['abs_rect'][0] - self.slice_size[1] / 5, self.frame_shape[1] - self.slice_size[1])))))
-            # y_off = int(np.max((0, np.min((best_detection['abs_rect'][1] + (best_detection['abs_rect'][3]-best_detection['abs_rect'][1])/2 - self.slice_size[0] / 2, self.frame_shape[0] - self.slice_size[0])))))
-            x_off = int(np.max((0, np.min((best_detection['abs_rect'][0] + (
-                        best_detection['abs_rect'][2] - best_detection['abs_rect'][0]) / 2 - self.slice_size[1] / 2,
-                                           self.frame_shape[1] - self.slice_size[1])))))
-            self.offset = (y_off, x_off)
-            # print("abs_xmint", abs_xmin, abs_xmax)
-            # print("self.offset", self.offset)
-            # print("self.frame_shape", self.frame_shape)
-            # self.init_det = False
-            return (best_detection['abs_rect'][2] - best_detection['abs_rect'][0],
-                    best_detection['abs_rect'][3] - best_detection['abs_rect'][1])
-        else:
-            self.offset = (0, 0)  # (self.frame_shape[0]-1, self.frame_shape[1]-1)
-            return 0, 0
+            return best_detection['abs_rect']
+
+
 
     def get_best_detections(self):
         for idx, det in enumerate(self.detections):

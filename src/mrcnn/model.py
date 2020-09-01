@@ -968,7 +968,8 @@ class DetectionTargetLayer(KE.Layer):
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # rois
             (None, self.config.TRAIN_ROIS_PER_IMAGE),  # class_ids
             (None, self.config.TRAIN_ROIS_PER_IMAGE, 4),  # deltas
-            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS, 2),
+            (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS, self.config.IMAGE_MAX_DIM,
+             self.config.IMAGE_MAX_DIM),
             (None, self.config.TRAIN_ROIS_PER_IMAGE, self.config.NUM_POINTS, 2)
         ]
 
@@ -1306,70 +1307,31 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
     return x
 
 
-def build_keypoints_graph(rois, feature_maps, image_meta,
-                          pool_size, train_bn=True, num_points=8):
-    """Builds the computation graph of the mask head of Feature Pyramid Network.
-
-    rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
-          coordinates.
-    feature_maps: List of feature maps from different layers of the pyramid,
-                  [P2, P3, P4, P5]. Each has a different resolution.
-    image_meta: [batch, (meta data)] Image details. See compose_image_meta()
-    pool_size: The width of the square feature map generated from ROI Pooling.
-    num_classes: number of classes, which determines the depth of the results
-    train_bn: Boolean. Train or freeze Batch Norm layers
-
-    Returns: Masks [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
-    """
-    # ROI Pooling
-    # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
-    x = PyramidROIAlign([pool_size, pool_size], name="roi_align_kp")([rois, image_meta] + feature_maps)
-    print("xxxxxx", x)
-
-    # Resnet
-    # x = conv_block_kp(x, 3, [64, 64, 256], stage=2, block='a', strides=(1, 1), train_bn=train_bn)
-    # x = identity_block_kp(x, 3, [64, 64, 256], stage=2, block='b', train_bn=train_bn)
-    # x = identity_block_kp(x, 3, [64, 64, 256], stage=2, block='c', train_bn=train_bn)
-    # x = conv_block_kp(x, 3, [128, 128, 512], stage=3, block='a', train_bn=train_bn)
-    # x = identity_block_kp(x, 3, [128, 128, 512], stage=3, block='b', train_bn=train_bn)
-    # x = identity_block_kp(x, 3, [128, 128, 512], stage=3, block='c', train_bn=train_bn)
-    # x = identity_block_kp(x, 3, [256, 256, 512], stage=3, block='d', train_bn=train_bn)
-    # x = conv_block_kp(x, 3, [512, 512, 1024], stage=4, block='a', train_bn=train_bn)
-    # for i in range(8):
-    #     x = identity_block_kp(x, 3, [1024, 1024, 1024], stage=4, block=chr(98 + i), train_bn=train_bn)
-    #
-    # x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_kp_flat")(x)
-    #
-    # x = KL.TimeDistributed(KL.Dense(num_points * 2, activation="sigmoid"), name="mrcnn_kp")(x)
-    # x = KL.TimeDistributed(KL.Reshape([num_points, 2]))(x)
-    # return x
-    # Resnet
-
-    # Conv layers
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv1")(x)
+def build_keypoints_graph(feature_maps, train_bn=True, num_points=8, out_shape=960):
+    feature_maps = KL.Lambda(lambda x: K.expand_dims(x, 0))(feature_maps)
+    # x = KL.Conv2D(2048, (3, 3), padding="same", name="mrcnn_kp_conv1")(feature_maps)
+    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv1")(feature_maps)
+    # x = KL.Deconv2D(256, (3, 3), strides=2, padding="same", name="mrcnn_kp_conv1")(feature_maps)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
-    # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv2")(x)
+    x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv2")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn2')(x, training=train_bn)
     x = KL.Activation('relu')(x)
-    # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv3")(x)
+    x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv3")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn3')(x, training=train_bn)
     x = KL.Activation('relu')(x)
-    # x = KL.Dropout(0.5)(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv4")(x)
+    x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv4")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv5")(x)
+    x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv5")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn5')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv6")(x)
+    x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv6")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn6')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
@@ -1377,14 +1339,65 @@ def build_keypoints_graph(rois, feature_maps, image_meta,
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn7')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv8")(x)
+    x = KL.TimeDistributed(KL.Conv2D(256, (3, 3), padding="same"), name="mrcnn_kp_conv8")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn8')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_kp_flat")(x)
+    x = KL.TimeDistributed(KL.Deconv2D(128, (3, 3), strides=2, padding="same"), name="mrcnn_kp_deconv1")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn9')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
 
-    x = KL.TimeDistributed(KL.Dense(num_points * 2), name="mrcnn_kp")(x)
-    x = KL.TimeDistributed(KL.Reshape([num_points, 2]))(x)
+    x = KL.TimeDistributed(KL.Deconv2D(64, (3, 3), strides=2, padding="same"), name="mrcnn_kp_deconv2")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn10')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(num_points, (1, 1), padding="same"), name="mrcnn_kp_conv9")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn11')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    # x = KL.Activation('sigmoid')(x)
+    # x = KL.Reshape((1, num_points, out_shape, out_shape))(x)
+    # x = KL.Conv2D(256, (3, 3), padding="same", name="mrcnn_kp_conv1")(feature_maps)
+    # # x = KL.Deconv2D(256, (3, 3), strides=2, padding="same", name="mrcnn_kp_conv1")(feature_maps)
+    # x = BatchNorm(name='mrcnn_kp_bn1')(x, training=train_bn)
+    # x = KL.Activation('relu')(x)
+    #
+    # x = KL.Conv2D(256, (3, 3), padding="same", name="mrcnn_kp_conv2")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn2')(x, training=train_bn)
+    # x = KL.Activation('relu')(x)
+    #
+    # x = KL.Conv2D(256, (3, 3), padding="same", name="mrcnn_kp_conv3")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn3')(x, training=train_bn)
+    # x = KL.Activation('relu')(x)
+    #
+    # x = KL.Conv2D(256, (3, 3), padding="same", name="mrcnn_kp_conv4")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn4')(x, training=train_bn)
+    # x = KL.Activation('relu')(x)
+    #
+    # x = KL.Conv2D(128, (3, 3), padding="same", name="mrcnn_kp_conv5")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn5')(x, training=train_bn)
+    # x = KL.Activation('relu')(x)
+    #
+    # x = KL.Conv2D(64, (3, 3), padding="same", name="mrcnn_kp_conv6")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn6')(x, training=train_bn)
+    # x = KL.Activation('relu')(x)
+    #
+    # x = KL.Conv2D(32, (3, 3), padding="same", name="mrcnn_kp_conv7")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn7')(x, training=train_bn)
+    # x = KL.Activation('relu')(x)
+    #
+    # x = KL.Conv2D(num_points, (3, 3), padding="same", name="mrcnn_kp_conv8")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn8')(x, training=train_bn)
+    #
+    # x = KL.Deconv2D(num_points, (3, 3), strides=2, padding="same", name="mrcnn_kp_deconv1")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn9')(x, training=train_bn)
+    #
+    # x = KL.Deconv2D(num_points, (3, 3), strides=2, padding="same", name="mrcnn_kp_deconv2")(x)
+    # x = BatchNorm(name='mrcnn_kp_bn10')(x, training=train_bn)
+    #
+    # x = KL.Activation('sigmoid')(x)
+    # x = KL.Reshape((-1, num_points, out_shape, out_shape))(x)
+
     return x
 
 
@@ -1576,13 +1589,11 @@ def mrcnn_bbox_loss_graph(target_bbox, target_class_ids, pred_bbox):
 
 
 def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
-    loss = keras.losses.mean_squared_error(target_kp, pred_kp)
-    # print(target_kp.shape[-1])
-    # loss_uncertainty = keras.losses.mean_squared_error(target_kp - pred_kp[target_kp.shape[-1]:],
-    #                                                    pred_kp[:target_kp.shape[-1]])
-    # loss_uncertainty = K.mean(loss_uncertainty)
+    pred_kp = K.permute_dimensions(pred_kp, (0, 1, 4, 2, 3))
+    loss = K.binary_crossentropy(target_kp, pred_kp)
     loss = K.mean(loss)
-    return loss  # +loss_uncertainty
+    # loss += K.cast(K.mean(a), tf.float32)
+    return loss
 
 
 def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, target_bbox, mrcnn_bbox):
@@ -1709,6 +1720,16 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     # bbox = np.array([ymin, xmin, ymax, xmax])
     # mask, class_ids, kp = dataset.query_gt(image_id)
 
+    # for i, k in enumerate(kp):  # range(int(len(kps) / 2)):
+    #     coords = np.unravel_index(k.argmax(), k.shape)
+    #     k = np.float32(k)
+    #     k = cv2.cvtColor(k, cv2.COLOR_GRAY2BGR)
+    #     print(coords)
+    #     alpha = 0.6
+    #     out_img = cv2.addWeighted(k, alpha, np.float32(image/255), 1 - alpha, 0)
+    #     # cv2.circle(out_img, coords, 10, (255, 255, 255), -1)
+    #     cv2.imshow("lol", out_img)
+    #     cv2.waitKey(0)
 
     original_shape = image.shape
     image, window, scale, padding, crop = utils.resize_image(
@@ -2244,7 +2265,8 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
                 batch_gt_boxes = np.zeros(
                     (batch_size, config.MAX_GT_INSTANCES, 4), dtype=np.int32)
                 batch_gt_kp = np.zeros(
-                    (batch_size, config.MAX_GT_INSTANCES, num_points, 2), dtype=np.float32)
+                    (batch_size, config.MAX_GT_INSTANCES, num_points, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM),
+                    dtype=np.float32)
                 if random_rois:
                     batch_rpn_rois = np.zeros(
                         (batch_size, rpn_rois.shape[0], 4), dtype=rpn_rois.dtype)
@@ -2281,8 +2303,7 @@ def data_generator(dataset, config, shuffle=True, augment=False, augmentation=No
 
             # Batch full?
             if b >= batch_size:
-                inputs = [batch_images, batch_image_meta, batch_rpn_match, batch_rpn_bbox,
-                          batch_gt_class_ids, batch_gt_boxes, batch_gt_kp]
+                inputs = [batch_images, batch_image_meta, batch_gt_kp]
                 outputs = []
 
                 if random_rois:
@@ -2355,30 +2376,9 @@ class MaskRCNN():
         input_image_meta = KL.Input(shape=[config.IMAGE_META_SIZE],
                                     name="input_image_meta")
         if mode == "training":
-            # RPN GT
-            input_rpn_match = KL.Input(
-                shape=[None, 1], name="input_rpn_match", dtype=tf.int32)
-            input_rpn_bbox = KL.Input(
-                shape=[None, 4], name="input_rpn_bbox", dtype=tf.float32)
-
-            # Detection GT (class IDs, bounding boxes, and masks)
-            # 1. GT Class IDs (zero padded)
-            input_gt_class_ids = KL.Input(
-                shape=[None], name="input_gt_class_ids", dtype=tf.int32)
-            # 2. GT Boxes in pixels (zero padded)
-            # [batch, MAX_GT_INSTANCES, (y1, x1, y2, x2)] in image coordinates
-            input_gt_boxes = KL.Input(
-                shape=[None, 4], name="input_gt_boxes", dtype=tf.float32)
-
             input_gt_kp = KL.Input(
-                shape=[None, self.num_points, 2], name="input_kp", dtype=tf.float32)
-            # Normalize coordinates
-            gt_boxes = KL.Lambda(lambda x: norm_boxes_graph(
-                x, K.shape(input_image)[1:3]))(input_gt_boxes)
-
-        elif mode == "inference":
-            # Anchors in normalized coordinates
-            input_anchors = KL.Input(shape=[None, 4], name="input_anchors")
+                shape=[None, self.num_points, config.IMAGE_MAX_DIM, config.IMAGE_MAX_DIM], name="input_kp",
+                dtype=tf.float32)
 
         # Build the shared convolutional layers.
         # Bottom-up Layers
@@ -2414,166 +2414,50 @@ class MaskRCNN():
         # P6 is used for the 5th anchor scale in RPN. Generated by
         # subsampling from P5 with stride of 2.
         P6 = KL.MaxPooling2D(pool_size=(1, 1), strides=2, name="fpn_p6")(P5)
-
-        # Note that P6 is used in RPN, but not in the classifier heads.
-        rpn_feature_maps = [P2, P3, P4, P5, P6]
-        fm = [KL.UpSampling2D(size=(16, 16))(P6), KL.UpSampling2D(size=(8,8))(P5),
-              KL.UpSampling2D(size=(4, 4))(P4), KL.UpSampling2D(size=(2, 2))(P3), P2]
-        # concat_fm = KL.Concatenate()(fm)
-        attention = KL.Lambda(lambda x: tf.reduce_mean(x, axis=-1, keepdims=True))(fm)
-        attention = KL.Lambda(lambda x: tf.transpose(x, [4, 1, 2, 3, 0]))(attention)
-
-        mrcnn_feature_maps = [P2, P3, P4, P5]
-
-        # Anchors
-        if mode == "training":
-            anchors = self.get_anchors(config.IMAGE_SHAPE)
-            # Duplicate across the batch dimension because Keras requires it
-            # TODO: can this be optimized to avoid duplicating the anchors?
-            anchors = np.broadcast_to(anchors, (config.BATCH_SIZE,) + anchors.shape)
-            # A hack to get around Keras's bad support for constants
-            anchors = KL.Lambda(lambda x: tf.Variable(anchors), name="anchors")(input_image)
-        else:
-            anchors = input_anchors
-
-        # RPN Model
-        rpn = build_rpn_model(config.RPN_ANCHOR_STRIDE,
-                              len(config.RPN_ANCHOR_RATIOS), config.TOP_DOWN_PYRAMID_SIZE)
-        # Loop through pyramid layers
-        layer_outputs = []  # list of lists
-        for p in rpn_feature_maps:
-            layer_outputs.append(rpn([p]))
-        # Concatenate layer outputs
-        # Convert from list of lists of level outputs to list of lists
-        # of outputs across levels.
-        # e.g. [[a1, b1, c1], [a2, b2, c2]] => [[a1, a2], [b1, b2], [c1, c2]]
-        output_names = ["rpn_class_logits", "rpn_class", "rpn_bbox"]
-        outputs = list(zip(*layer_outputs))
-        outputs = [KL.Concatenate(axis=1, name=n)(list(o))
-                   for o, n in zip(outputs, output_names)]
-
-        rpn_class_logits, rpn_class, rpn_bbox = outputs
-
-        # Generate proposals
-        # Proposals are [batch, N, (y1, x1, y2, x2)] in normalized coordinates
-        # and zero padded.
-        proposal_count = config.POST_NMS_ROIS_TRAINING if mode == "training"\
-            else config.POST_NMS_ROIS_INFERENCE
-        rpn_rois = ProposalLayer(
-            proposal_count=proposal_count,
-            nms_threshold=config.RPN_NMS_THRESHOLD,
-            name="ROI",
-            config=config)([rpn_class, rpn_bbox, anchors])
+        print(P2, "P2")
 
         if mode == "training":
-            # Class ID mask to mark class IDs supported by the dataset the image
-            # came from.
-            active_class_ids = KL.Lambda(
-                lambda x: parse_image_meta_graph(x)["active_class_ids"]
-                )(input_image_meta)
-
-            if not config.USE_RPN_ROIS:
-                # Ignore predicted ROIs and use ROIs provided as an input.
-                input_rois = KL.Input(shape=[config.POST_NMS_ROIS_TRAINING, 4],
-                                      name="input_roi", dtype=np.int32)
-                # Normalize coordinates
-                target_rois = KL.Lambda(lambda x: norm_boxes_graph(
-                    x, K.shape(input_image)[1:3]))(input_rois)
-            else:
-                target_rois = rpn_rois
-
-            # Generate detection targets
-            # Subsamples proposals and generates target outputs for training
-            # Note that proposal class IDs, gt_boxes, and gt_masks are zero
-            # padded. Equally, returned rois and targets are zero padded.
-            rois, target_class_ids, target_bbox, target_kp = \
-                DetectionTargetLayer(config, name="proposal_targets")([
-                    target_rois, input_gt_class_ids, gt_boxes, input_gt_kp])
-
-            # Network Heads
-            # TODO: verify that this handles zero padded ROIs
-            mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
-                fpn_classifier_graph(rois, mrcnn_feature_maps, input_image_meta,
-                                     config.POOL_SIZE, config.NUM_CLASSES,
-                                     train_bn=config.TRAIN_BN,
-                                     fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
-
-            mrcnn_keypoints = build_keypoints_graph(rois, mrcnn_feature_maps,
-                                                    input_image_meta,
-                                                    config.MASK_POOL_SIZE,
+            mrcnn_keypoints = build_keypoints_graph(P2,
                                                     train_bn=config.TRAIN_BN,
-                                                    num_points=config.NUM_POINTS)
+                                                    num_points=config.NUM_POINTS,
+                                                    out_shape=config.IMAGE_MAX_DIM)
 
-            mrcnn_uncertainty = build_uncertainty_graph(rois, mrcnn_feature_maps,
-                                                        input_image_meta,
-                                                        config.MASK_POOL_SIZE,
-                                                        config.NUM_CLASSES,
-                                                        train_bn=config.TRAIN_BN,
-                                                        num_points=config.NUM_POINTS)
-
-            # TODO: clean up (use tf.identify if necessary)
-            output_rois = KL.Lambda(lambda x: x * 1, name="output_rois")(rois)
+            # mrcnn_uncertainty = build_uncertainty_graph(rois, mrcnn_feature_maps,
+            #                                             input_image_meta,
+            #                                             config.MASK_POOL_SIZE,
+            #                                             config.NUM_CLASSES,
+            #                                             train_bn=config.TRAIN_BN,
+            #                                             num_points=config.NUM_POINTS)
 
             # Losses
-            rpn_class_loss = KL.Lambda(lambda x: rpn_class_loss_graph(*x), name="rpn_class_loss")(
-                [input_rpn_match, rpn_class_logits])
-            rpn_bbox_loss = KL.Lambda(lambda x: rpn_bbox_loss_graph(config, *x), name="rpn_bbox_loss")(
-                [input_rpn_bbox, input_rpn_match, rpn_bbox])
-            class_loss = KL.Lambda(lambda x: mrcnn_class_loss_graph(*x), name="mrcnn_class_loss")(
-                [target_class_ids, mrcnn_class_logits, active_class_ids])
-            bbox_loss = KL.Lambda(lambda x: mrcnn_bbox_loss_graph(*x), name="mrcnn_bbox_loss")(
-                [target_bbox, target_class_ids, mrcnn_bbox])
             # mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
             #     [target_mask, target_class_ids, mrcnn_mask])
             kp_loss = KL.Lambda(lambda x: mrcnn_keypoints_loss_graph(*x), name="mrcnn_kp_loss")(
-                [target_kp, mrcnn_keypoints])
-            uncertainty_loss = KL.Lambda(lambda x: mrcnn_uncertainty_loss_graph(*x), name="mrcnn_uncertainty_loss")(
-                [target_kp, mrcnn_keypoints, mrcnn_uncertainty, target_bbox, mrcnn_bbox])
-
+                [input_gt_kp, mrcnn_keypoints])
+            # uncertainty_loss = KL.Lambda(lambda x: mrcnn_uncertainty_loss_graph(*x), name="mrcnn_uncertainty_loss")(
+            #     [target_kp, mrcnn_keypoints, mrcnn_uncertainty, target_bbox, mrcnn_bbox])
+            print(kp_loss, "kploss")
             # Model
-            inputs = [input_image, input_image_meta, input_rpn_match, input_rpn_bbox, input_gt_class_ids,
-                      input_gt_boxes, input_gt_kp]
-            if not config.USE_RPN_ROIS:
-                inputs.append(input_rois)
-            outputs = [rpn_class_logits, rpn_class, rpn_bbox,
-                       mrcnn_class_logits, mrcnn_class, mrcnn_bbox,
-                       rpn_rois, output_rois,
-                       rpn_class_loss, rpn_bbox_loss, class_loss, bbox_loss, kp_loss, uncertainty_loss]
+            inputs = [input_image, input_image_meta, input_gt_kp]
+            outputs = [kp_loss]
             model = KM.Model(inputs, outputs, name='mask_rcnn')
         else:
-            # Network Heads
-            # Proposal classifier and BBox regressor heads
-            mrcnn_class_logits, mrcnn_class, mrcnn_bbox =\
-                fpn_classifier_graph(rpn_rois, mrcnn_feature_maps, input_image_meta,
-                                     config.POOL_SIZE, config.NUM_CLASSES,
-                                     train_bn=config.TRAIN_BN,
-                                     fc_layers_size=config.FPN_CLASSIF_FC_LAYERS_SIZE)
 
-            # Detections
-            # output is [batch, num_detections, (y1, x1, y2, x2, class_id, score)] in
-            # normalized coordinates
-            detections = DetectionLayer(config, name="mrcnn_detection")(
-                [rpn_rois, mrcnn_class, mrcnn_bbox, input_image_meta])
-
-            # Create masks for detections
-            detection_boxes = KL.Lambda(lambda x: x[..., :4])(detections)
-
-            mrcnn_keypoints = build_keypoints_graph(detection_boxes, mrcnn_feature_maps,
-                                                    input_image_meta,
-                                                    config.MASK_POOL_SIZE,
+            mrcnn_keypoints = build_keypoints_graph(P2,
                                                     train_bn=config.TRAIN_BN,
-                                                    num_points=config.NUM_POINTS)
+                                                    num_points=config.NUM_POINTS,
+                                                    out_shape=config.IMAGE_MAX_DIM)
 
-            mrcnn_uncertainty = build_uncertainty_graph(detection_boxes, mrcnn_feature_maps,
-                                                        input_image_meta,
-                                                        config.MASK_POOL_SIZE,
-                                                        config.NUM_CLASSES,
-                                                        train_bn=config.TRAIN_BN,
-                                                        num_points=config.NUM_POINTS)
+            # mrcnn_uncertainty = build_uncertainty_graph(detection_boxes, mrcnn_feature_maps,
+            #                                             input_image_meta,
+            #                                             config.MASK_POOL_SIZE,
+            #                                             config.NUM_CLASSES,
+            #                                             train_bn=config.TRAIN_BN,
+            #                                             num_points=config.NUM_POINTS)
+            print(mrcnn_keypoints, "mrcnn_keypoints")
 
-            model = KM.Model([input_image, input_image_meta, input_anchors],
-                             [detections, mrcnn_class, mrcnn_bbox,
-                              rpn_rois, rpn_class, rpn_bbox, mrcnn_keypoints, mrcnn_uncertainty, attention],
+            model = KM.Model([input_image, input_image_meta],
+                             [mrcnn_keypoints],
                              name='mask_rcnn')
 
         # Add multi-GPU support.
@@ -2694,9 +2578,7 @@ class MaskRCNN():
         # First, clear previously set losses to avoid duplication
         self.keras_model._losses = []
         self.keras_model._per_input_losses = {}
-        loss_names = [
-            "rpn_class_loss",  "rpn_bbox_loss",
-            "mrcnn_class_loss", "mrcnn_bbox_loss", "mrcnn_kp_loss", "mrcnn_uncertainty_loss"]
+        loss_names = ["mrcnn_kp_loss"]
         for name in loss_names:
             layer = self.keras_model.get_layer(name)
             if layer.output in self.keras_model.losses:
@@ -3064,26 +2946,13 @@ class MaskRCNN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        detections, _, _, _, _, _, kp, uncertainity, attention = \
-            self.keras_model.predict([molded_images, image_metas, anchors], verbose=0)
+        kp = self.keras_model.predict([molded_images, image_metas], verbose=0)
         # Process detections
 
         results = []
         for i, image in enumerate(images):
-            final_rois, final_class_ids, final_scores, final_masks = \
-                self.unmold_detections(detections[i], None,
-                                       image.shape, molded_images[i].shape,
-                                       windows[i])
-
             results.append({
-                "rois": final_rois,
-                "class_ids": final_class_ids,
-                "scores": final_scores,
-                "masks": None,
-                "kp": kp,
-                "uncertainty": uncertainity,
-                "attention": attention,
-                "yaw": None,
+                "kp": kp
             })
         return results
 
