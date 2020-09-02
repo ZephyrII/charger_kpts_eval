@@ -66,8 +66,8 @@ class ChargerDataset(utils.Dataset):
         # Train or validation dataset?
         assert subset in ["train", "val"]
         if subset == "val":
-            # pass
-            dataset_dir = os.path.join(dataset_dir, 'val')
+            pass
+            # dataset_dir = os.path.join(dataset_dir, 'val')
         annotations = os.listdir(os.path.join(dataset_dir, 'annotations'))
 
         # Add images
@@ -151,6 +151,7 @@ class ChargerDataset(utils.Dataset):
                 point_center = (
                 int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)),
                 int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)))
+                keypoints.append((point_center[1], point_center[0]))
                 # kp_maps[i, int(float(kp.find('y').text)*h), int(float(kp.find('x').text)*w)] = 1.0
                 kp_maps[i, point_center[0] - point_size:point_center[0] + point_size,
                 point_center[1] - point_size:point_center[1] + point_size] = 255
@@ -159,7 +160,7 @@ class ChargerDataset(utils.Dataset):
                 # cv2.imshow('xddlol', kp_maps[i])
                 # cv2.waitKey(0)
 
-        return kp_maps
+        return kp_maps, keypoints
 
     def load_yaw(self, image_id):
 

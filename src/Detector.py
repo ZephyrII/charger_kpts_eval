@@ -2,7 +2,7 @@
 import tensorflow as tf
 import numpy as np
 import cv2
-import six
+import time
 import collections
 from mrcnn.config import Config
 from mrcnn import model as modellib, utils
@@ -157,20 +157,16 @@ class Detector:
         self.frame_shape = shape
         self.moving_avg_image = np.full(shape[:2], 100, dtype=np.uint8)
 
-    def get_CNN_output(self, image_np):  # TODO: scale keypoints
-        # print("image_np", image_np, "\n\n")
+    def get_CNN_output(self, image_np):
+        start_time = time.time()
         if self.bottom:
             r = self.det_model_bottom.detect([image_np], verbose=0)[0]
         else:
             r = self.det_model.detect([image_np], verbose=0)[0]
-        # Color splash
-        # splash = self. color_splash(image_np, r['masks'])
-        # if len(r['rois']) == 0:
-        #     return
+        print("kp detection time:", time.time() - start_time)
+
         kps = r['kp'][0][0]
-        print("shape", kps.shape)
         kps = np.transpose(kps, (2, 0, 1))
-        print("shape", kps.shape)
 
         for i, kp in enumerate(kps):  # range(int(len(kps) / 2)):
             # kp = kp[50:-50, 50:-50]
@@ -182,8 +178,8 @@ class Detector:
             alpha = 0.9
             # out_img = cv2.addWeighted(kp, alpha, (image_np/255).astype(np.float), 1-alpha, 0)
             cv2.circle(image_np, (coords[1], coords[0]), 10, (255, 255, 255), -1)
-        cv2.imshow("lol", np.sum(kps, axis=0))
-        cv2.waitKey(0)
+        # cv2.imshow("lol", np.sum(kps, axis=0))
+        # cv2.waitKey(0)
 
         cv2.imshow('Detection', cv2.resize(image_np, (960, 960)))
         # print("uncert", kps[int(len(kps) / 2):])
@@ -249,10 +245,12 @@ class Detector:
                      self.offset[1]:self.offset[1] + self.slice_size[1]]
 
     def init_detection(self, frame):
+        start_time = time.time()
         small_frame = cv2.resize(frame, (self.slice_size[1], self.slice_size[0]))
         # cv2.waitKey(10)
         xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
         frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
+        print("pole detection time:", time.time() - start_time)
 
         # try:
         #     cv2.imshow("pole", self.get_slice(frame))
