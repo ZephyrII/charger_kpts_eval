@@ -66,8 +66,8 @@ class ChargerDataset(utils.Dataset):
         # Train or validation dataset?
         assert subset in ["train", "val"]
         if subset == "val":
-            pass
-            # dataset_dir = os.path.join(dataset_dir, 'val')
+            # pass
+            dataset_dir = os.path.join(dataset_dir, 'val')
         annotations = os.listdir(os.path.join(dataset_dir, 'annotations'))
 
         # Add images

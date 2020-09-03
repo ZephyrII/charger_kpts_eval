@@ -42,7 +42,7 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model_front = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model_front = "/root/share/tf/Keras/31_08_heatmap"
+        path_to_model_front = "/root/share/tf/Keras/2_09_heatmap_unc"
         # path_to_model_front = "/root/share/tf/Keras/22_07_residual_kp_big_head"
         # path_to_model_front = "/root/share/tf/Keras/3_07_PP_5_separate_uncertainty_UGLLI_loss"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
@@ -79,7 +79,8 @@ class DetectorNode:
         # Uncertainty estimation
         self.total_kp = 0
         self.kp_predictions = []
-        self.cov_matrices = np.empty((10, 10, 0), np.float)
+        self.cov_matrices = np.empty((8, 8, 0), np.float)
+        self.prediction_errors = []
 
         # Initialize detector
         self.pointgrey_frame_shape = (5, 5)  # self.get_image_shape(self.pointgrey_topic)
@@ -199,6 +200,7 @@ class DetectorNode:
                     self.detect(self.blackfly_image, None, self.frame_gt)
                     # self.detect(self.blackfly_image, self.blackfly_image_msg.header.stamp, self.frame_gt)
 
+        self.detector.yolo.close_session()
         rospy.spin()
 
     # def get_pitch(self, imu_msg):
@@ -296,63 +298,20 @@ class DetectorNode:
             self.posePublisher_front.publish(out_msg)
 
     def publish_keyponts(self, stamp):
-        out_msg = KeypointsWithCovarianceStamped()
-        out_msg.header.stamp = stamp
-        out_msg.keypoints = []
-        out_msg.covariance = []
+
+        def calc_dist(x, z):
+            # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
+            return abs(x[0] - z[0]), abs(x[1] - z[1])
+
+        single_img_pred = []
         for idx, kp in enumerate(self.keypoints):
-            if idx == 2:
-                out_msg.keypoints.append(self.keypoints[4][0])
-                out_msg.keypoints.append(self.keypoints[4][1])
-            if idx == 4:
-                continue
-            out_msg.keypoints.append(kp[0])
-            out_msg.keypoints.append(kp[1])
-        cov_mx = np.array(self.detector.best_detection["uncertainty"])
-        for idx, cm in enumerate(cov_mx):
-            if idx == 2:
-                for itm in cm.flatten():
-                    out_msg.covariance.append(itm)
-            if idx == 4:
-                continue
-            for itm in cm.flatten():
-                out_msg.covariance.append(itm)
-        print(out_msg.keypoints)
-        self.keypointsPublisher.publish(out_msg)
-
-        # out_msg = Float64MultiArray()
-        # for idx, kp in enumerate(self.keypoints):
-        #     if idx == 2:
-        #         out_msg.data.append(self.keypoints[4][0])
-        #         out_msg.data.append(self.keypoints[4][1])
-        #     if idx == 4:
-        #         continue
-        #     out_msg.data.append(kp[0])
-        #     out_msg.data.append(kp[1])
-        # cov_mx = np.array(self.detector.best_detection["uncertainty"])
-        # for idx, cm in enumerate(cov_mx):
-        #     if idx == 2:
-        #         for itm in cm.flatten():
-        #             out_msg.data.append(itm)
-        #     if idx == 4:
-        #         continue
-        #     for itm in cm.flatten():
-        #         out_msg.data.append(itm)
-        # print(out_msg.data)
-        # self.keypointsPublisher.publish(out_msg)
-
-        # def calc_dist(x, z):
-        #     # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
-        #     return abs(x[0] - z[0]), abs(x[1] - z[1])
-        #
-        # single_img_pred = []
-        # for idx, kp in enumerate(self.keypoints[:5]):
-        #     # print(len(self.gt_keypoints))
-        #     # print("kp", len(self.keypoints))
-        #     if calc_dist(kp, self.gt_keypoints[idx])[0] > 500:
-        #         return
-        #     single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
-        # self.kp_predictions.append(np.array(single_img_pred).reshape((10, 1)))  # calc_dist(kp, self.gt_keypoints[idx]))
+            # print(len(self.gt_keypoints))
+            # print("kp", len(self.keypoints))
+            if calc_dist(kp, self.gt_keypoints[idx])[1] > 150:
+                return
+            single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
+        self.prediction_errors.append(
+            np.array(single_img_pred).reshape((8, 1)))  # calc_dist(kp, self.gt_keypoints[idx]))
 
 
 if __name__ == '__main__':

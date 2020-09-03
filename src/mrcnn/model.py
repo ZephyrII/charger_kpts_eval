@@ -1309,7 +1309,7 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
 
 def build_keypoints_graph(feature_maps, train_bn=True, num_points=8, out_shape=960):
     feature_maps = KL.Lambda(lambda x: K.expand_dims(x, 0))(feature_maps)
-    # x = KL.Conv2D(2048, (3, 3), padding="same", name="mrcnn_kp_conv1")(feature_maps)
+    # x = KL.Conv2D(2048, (3, 3), padding="same", name="mrcngs /root/share/tf/Keras/1_09_heatmapn_kp_conv1")(feature_maps)
     x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv1")(feature_maps)
     # x = KL.Deconv2D(256, (3, 3), strides=2, padding="same", name="mrcnn_kp_conv1")(feature_maps)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn1')(x, training=train_bn)
@@ -1327,13 +1327,13 @@ def build_keypoints_graph(feature_maps, train_bn=True, num_points=8, out_shape=9
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn4')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
-    # x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv5")(x)
-    # x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn5')(x, training=train_bn)
-    # x = KL.Activation('relu')(x)
-    #
-    # x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv6")(x)
-    # x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn6')(x, training=train_bn)
-    # x = KL.Activation('relu')(x)
+    x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv5")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn5')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
+
+    x = KL.TimeDistributed(KL.Conv2D(1024, (3, 3), padding="same"), name="mrcnn_kp_conv6")(x)
+    x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn6')(x, training=train_bn)
+    x = KL.Activation('relu')(x)
 
     x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv7")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn7')(x, training=train_bn)
@@ -2839,13 +2839,14 @@ class MaskRCNN():
             log("image_metas", image_metas)
             log("anchors", anchors)
         # Run object detection
-        kp = self.keras_model.predict([molded_images, image_metas], verbose=0)
+        kp, uncertainty = self.keras_model.predict([molded_images, image_metas], verbose=0)
         # Process detections
 
         results = []
         for i, image in enumerate(images):
             results.append({
-                "kp": kp
+                "kp": kp,
+                "uncertainty": uncertainty
             })
         return results
 

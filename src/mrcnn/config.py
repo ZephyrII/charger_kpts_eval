@@ -192,7 +192,7 @@ class Config(object):
     # Can be used for R-CNN training setup.
     LOSS_WEIGHTS = {
         "mrcnn_kp_loss": 10.,
-        "mrcnn_uncertainty_loss": 1.
+        "mrcnn_uncertainty_loss": 0.
     }
 
     # Use RPN ROIs or externally generated ROIs for training

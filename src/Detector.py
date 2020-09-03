@@ -3,9 +3,10 @@ import tensorflow as tf
 import numpy as np
 import cv2
 import time
-import collections
 from mrcnn.config import Config
-from mrcnn import model as modellib, utils
+from mrcnn import model as modellib
+from YOLO.yolo import YOLO
+from PIL import Image
 
 try:
     from cv2 import cv2
@@ -114,6 +115,8 @@ class Detector:
         self.bottom = False
         self.gt_kp = None
         self.gt_pose = None
+
+        self.yolo = YOLO()
 
         self.pole_detection_graph = tf.Graph()
         with self.pole_detection_graph.as_default():
@@ -247,8 +250,14 @@ class Detector:
     def init_detection(self, frame):
         start_time = time.time()
         small_frame = cv2.resize(frame, (self.slice_size[1], self.slice_size[0]))
+
+        box = self.yolo.detect_image(Image.fromarray(small_frame))
+        ymin, xmin, ymax, xmax = box
+
+
+
         # cv2.waitKey(10)
-        xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
+        # xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
         frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
         print("pole detection time:", time.time() - start_time)
 
