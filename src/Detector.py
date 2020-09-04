@@ -108,7 +108,7 @@ class Detector:
         self.detections = []
         self.best_detection = None
         # self.mask_reshaped = None
-        # self.contour = None
+        self.bbox = None
         self.frame_shape = None
         self.moving_avg_image = None
         self.init_det = True
@@ -160,7 +160,7 @@ class Detector:
         self.frame_shape = shape
         self.moving_avg_image = np.full(shape[:2], 100, dtype=np.uint8)
 
-    def get_CNN_output(self, image_np):
+    def get_CNN_output(self, image_np):  # TODO: scale keypoints
         start_time = time.time()
         if self.bottom:
             r = self.det_model_bottom.detect([image_np], verbose=0)[0]
@@ -170,73 +170,34 @@ class Detector:
 
         kps = r['kp'][0][0]
         kps = np.transpose(kps, (2, 0, 1))
+        absolute_kp = []
 
-        for i, kp in enumerate(kps):  # range(int(len(kps) / 2)):
-            # kp = kp[50:-50, 50:-50]
-            coords = np.unravel_index(kp.argmax(), kp.shape)
-            kp = kp / np.max(kp)
-            kp = cv2.cvtColor(kp, cv2.COLOR_GRAY2BGR).astype(np.float)
-            # print("uq", np.unique(kp))
-            # print(coords)
-            alpha = 0.9
-            # out_img = cv2.addWeighted(kp, alpha, (image_np/255).astype(np.float), 1-alpha, 0)
-            cv2.circle(image_np, (coords[1], coords[0]), 10, (255, 255, 255), -1)
-        # cv2.imshow("lol", np.sum(kps, axis=0))
-        # cv2.waitKey(0)
+        for i, kp in enumerate(kps):
+            center = np.unravel_index(kp.argmax(), kp.shape)
+            h, w = kp.shape
+            ret, kp = cv2.threshold(kp, 0.8, 1.0, cv2.THRESH_BINARY)
+            # if np.sum(kp)==0:
+            #     center=(0,0)
+            # else:
+            #     center = np.average(np.sum(kp, axis=1)*np.arange(w))/np.sum(kp)*w, \
+            #               np.average(np.sum(kp, axis=0)*np.arange(h))/np.sum(kp)*h
+            absolute_kp.append(((center[1] * self.scale[0] + self.bbox[0]) * self.frame_shape[1] / self.slice_size[1],
+                                (center[0] * self.scale[1] + self.bbox[1]) * self.frame_shape[0] / self.slice_size[0]))
 
-        cv2.imshow('Detection', cv2.resize(image_np, (960, 960)))
-        # print("uncert", kps[int(len(kps) / 2):])
-
-        # detection = dict(score=r['scores'][0], abs_rect=np.array([abs_xmin, abs_ymin, abs_xmax, abs_ymax]) / self.scale,
-        #                  keypoints=absolute_kp_scaled, uncertainty=np.array(uncertainty))
-        # self.detections.append(detection)
+            # cv2.imshow('mask', cv2.resize(kp, (960, 960)))
+            # cv2.waitKey(0)
+        self.best_detection = dict(keypoints=absolute_kp, uncertainty=np.array([]))
 
     def detect(self, frame, gt_pose, gt_kp):
-        # print("detector detect")
         self.gt_kp = gt_kp
-        # self.frame_shape = frame.shape[:2]
-        # y_off = int(np.max((0, np.min((self.offset[0], self.frame_shape[0] - self.slice_size[0])))))
-        # x_off = int(np.max((0, np.min((self.offset[1], self.frame_shape[1] - self.slice_size[1]))))) # TODO possible issue with offset
-        # self.offset = (y_off, x_off)
         self.gt_pose = gt_pose
-        # if self.frame_shape is None:
-        #     return
         self.detections = []
         self.best_detection = None
-        if self.init_det and not self.bottom:
-            print("init_det")
-            self.init_detection(frame)
-        else:
-            frame = cv2.resize(frame, None, fx=self.scale, fy=self.scale)
-            self.get_CNN_output(self.get_slice(frame))
+        self.init_detection(frame)
         if len(self.detections) == 0:
             print("No detections")
-            # self.init_det = True
-        else:
-            self.init_det = False
-            self.get_best_detections()
         if self.best_detection is not None:
-            abs_xmin, abs_ymin, abs_xmax, abs_ymax = self.best_detection['abs_rect']
-            width = abs_xmax - abs_xmin
-            height = abs_ymax - abs_ymin
-            print("scale", self.scale)
-            print("width", width)
-            if width > self.slice_size[1] * self.charger_to_slice_ratio:
-                self.scale = self.slice_size[1] / width * self.charger_to_slice_ratio
-                y_off = int(
-                    np.max((0, np.min((abs_ymin + (abs_ymax - abs_ymin) / 2 - self.slice_size[0] / 2 / self.scale,
-                                       self.frame_shape[0] - (self.slice_size[0]) / self.scale)))))
-                x_off = int(
-                    np.max((0, np.min((abs_xmin + (abs_xmax - abs_xmin) / 2 - self.slice_size[1] / 2 / self.scale,
-                                       self.frame_shape[1] - (self.slice_size[1]) / self.scale)))))
-
-                self.offset = (y_off, x_off)
-                self.offset = (int(self.offset[0] * self.scale), int(self.offset[1] * self.scale))
-                # min(self.slice_size[1]/width*self.charger_to_slice_ratio, self.slice_size[0]/height*self.charger_to_slice_ratio)
-            # if self.scale < 0.2:
-            #     self.bottom = True
-            #     self.scale = 0.7
-            #     self.scale = 1.0
+            pass
         return
 
     def get_slice(self, frame, offset=None):
@@ -258,15 +219,12 @@ class Detector:
 
         # cv2.waitKey(10)
         # xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
+        self.bbox = [xmin, ymin, xmax, ymax]
         frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
         print("pole detection time:", time.time() - start_time)
+        self.scale = ((xmax - xmin) / self.slice_size[0], (ymax - ymin) / self.slice_size[1])
+        print("pole detection time:", time.time() - start_time)
 
-        # try:
-        #     cv2.imshow("pole", self.get_slice(frame))
-        #     cv2.waitKey(10)
-        # except cv2.error:
-        #     print("self.get_slice(frame).shape", self.get_slice(frame).shape)
-        # print("self.get_slice(frame).shape", self.get_slice(frame).shape)
         self.get_CNN_output(self.get_slice(frame))
 
     def detect_pole(self, small_frame):
@@ -305,50 +263,3 @@ class Detector:
         if len(detections) > 0:
             best_detection = sorted(detections, key=lambda k: k['score'], reverse=True)[0]
             return best_detection['abs_rect']
-
-
-
-    def get_best_detections(self):
-        for idx, det in enumerate(self.detections):
-            x1, y1, x2, y2 = det['abs_rect'].astype(np.int)
-            ma_score = np.mean(self.moving_avg_image[y1:y2, x1:x2])
-            self.detections[idx]['refined_score'] = ma_score + self.detections[idx]['score']
-        self.best_detection = sorted(self.detections, key=lambda k: k['refined_score'], reverse=True)[0]
-        x1, y1, x2, y2 = self.best_detection['abs_rect']
-        # y_off = int(np.min((np.max((0, y1 - self.slice_size[0] / 2)), self.frame_shape[0])))
-        # x_off = int(np.min((np.max((0, x1 - self.slice_size[1] / 2)), self.frame_shape[1])))
-        # mask = self.best_detection['mask'].astype(np.uint8)
-        # print(self.best_detection['mask'].shape, 'lool')
-        # mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-        # self.mask_reshaped = mask # cv2.resize(mask, dsize=(x2 - x1, y2 - y1))
-        # y_off = int(np.max((0, np.min((y1 - self.slice_size[0] / 5, self.frame_shape[0] - self.slice_size[0])))))
-        # x_off = int(np.max((0, np.min((x1 - self.slice_size[1] / 5, self.frame_shape[1] - self.slice_size[1])))))
-
-    #
-    # def draw_detection(self, frame):
-    #     x1, y1, x2, y2 = self.best_detection['abs_rect']
-    #     mask = self.best_detection['mask'] * 255
-    #     mask = cv2.cvtColor(mask, cv2.COLOR_GRAY2BGR)
-    #     self.mask_reshaped = cv2.resize(mask, dsize=(x2 - x1, y2 - y1))
-    #
-    #     if 'keypoints' in self.best_detection:
-    #         for idx, pt in enumerate(self.best_detection['keypoints']):
-    #             cv2.circle(frame, (int(pt[0]), int(pt[1])), 3, (0, 255, 0), 1)
-    #
-    #     # frame[y1:y2, x1:x2] = self.mask_reshaped
-    #     imgray = cv2.cvtColor(self.mask_reshaped.astype(np.uint8), cv2.COLOR_BGR2GRAY)
-    #     ret, thresh = cv2.threshold(imgray, 127, 255, 0)
-    #     contours, hierarchy = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-    #     if len(contours) > 0:
-    #         self.contour = np.add(contours[0], [x1, y1])
-    #         cv2.drawContours(frame, [self.contour], 0, (255, 50, 50), 1)
-    #
-    #     # frame[y1:y2, x1:x2] = np.where(self.mask_reshaped>0.5, (255, 255, 255), frame[y1:y2, x1:x2])
-    #     # cv2.rectangle(frame, (x1, y1), (x1+80, y1-30), (0, 255, 0), -1)
-    #     # cv2.putText(frame, "charger", (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 1.1, (0, 0, 0), 2)
-    #
-    #     # self.class_predictor_weights = np.reshape(self.class_predictor_weights, (512, -1, 2))
-    #     # heatmap = featureVisualizer.create_fm_weighted(0.7, np.squeeze(self.rpn_box_predictor_features), self.get_slice(frame), self.class_predictor_weights[:, :, 1])
-    #     # cv2.rectangle(heatmap, (x1-self.offset[1], y1-self.offset[0]), (x2-self.offset[1], y2-self.offset[0]), (0, 255, 0), 3)
-    #     # cv2.namedWindow("heatmap", 0)
-    #     # cv2.imshow("heatmap", heatmap)

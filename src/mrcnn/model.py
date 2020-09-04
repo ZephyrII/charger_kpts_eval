@@ -1308,10 +1308,9 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
 
 
 def build_keypoints_graph(feature_maps, train_bn=True, num_points=8, out_shape=960):
+
     feature_maps = KL.Lambda(lambda x: K.expand_dims(x, 0))(feature_maps)
-    # x = KL.Conv2D(2048, (3, 3), padding="same", name="mrcngs /root/share/tf/Keras/1_09_heatmapn_kp_conv1")(feature_maps)
     x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv1")(feature_maps)
-    # x = KL.Deconv2D(256, (3, 3), strides=2, padding="same", name="mrcnn_kp_conv1")(feature_maps)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_kp_bn1')(x, training=train_bn)
     x = KL.Activation('relu')(x)
 
@@ -1398,7 +1397,6 @@ def build_uncertainty_graph(feature_maps, input_size, train_bn=True, num_points=
     x = KL.Activation('relu')(x)
 
     x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_uncertainty_flat")(x)
-    # x = KL.Reshape([1, 1, -1])(x)
 
     # x = KL.TimeDistributed(KL.Dense((num_points * 2 + 1) * num_points, activation="elu"), name="mrcnn_uncertainty")(x)
     # x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)  #uncertainty 10x10
@@ -1548,6 +1546,7 @@ def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
     pred_kp = K.permute_dimensions(pred_kp, (0, 1, 4, 2, 3))
     loss = K.binary_crossentropy(target_kp, pred_kp)
     loss = K.mean(loss)
+    # loss += K.cast(K.mean(a), tf.float32)
     return loss
 
 
@@ -2326,7 +2325,6 @@ class MaskRCNN():
             # Losses
             # mask_loss = KL.Lambda(lambda x: mrcnn_mask_loss_graph(*x), name="mrcnn_mask_loss")(
             #     [target_mask, target_class_ids, mrcnn_mask])
-            # img_shape = KL.Input(tensor=tf.constant(config.IMAGE_MAX_DIM, dtype=tf.float32), shape=[1, 1, 1])
             kp_loss = KL.Lambda(lambda x: mrcnn_keypoints_loss_graph(*x), name="mrcnn_kp_loss")(
                 [input_gt_kp_heatmap, mrcnn_keypoints])
             uncertainty_loss = KL.Lambda(lambda x: mrcnn_uncertainty_loss_graph(*x), name="mrcnn_uncertainty_loss")(

@@ -103,21 +103,20 @@ class ChargerDataset(utils.Dataset):
                 annotation=os.path.join(dataset_dir, 'annotations', a),
                 bbox=np.array([xmin, ymin, xmax, ymax]))
 
-    def load_mask(self, image_id):
-        """Generate instance masks for an image.
-       Returns:
-        masks: A bool array of shape [height, width, instance count] with
-            one mask per instance.
-        class_ids: a 1D array of class IDs of the instance masks.
-        """
-        # If not a charger dataset image, delegate to parent class.
-        image_info = self.image_info[image_id]
-        if image_info["source"] != "charger":
-            return super(self.__class__, self).load_mask(image_id)
-
-        info = self.image_info[image_id]
-        mask = cv2.imread(info['mask'])
-        return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+    def load_image(self, image_id):
+        print("overloaded load_image function")
+        image = cv2.imread(self.image_info[image_id]['path'])
+        xmin, ymin, xmax, ymax = self.image_info[image_id]['bbox']
+        # If grayscale. Convert to RGB for consistency.
+        if image.ndim != 3:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+            # image = skimage.color.gray2rgb(image)
+        # If has an alpha channel, remove it for consistency
+        if image.shape[-1] == 4:
+            image = image[..., :3]
+        image = image[ymin:ymax, xmin:xmax]
+        image = cv2.resize(image, (self.image_info[image_id]['width'], self.image_info[image_id]['height']))
+        return image
 
     def load_kp(self, image_id, num_points):
 

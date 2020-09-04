@@ -22,8 +22,8 @@ import time
 
 # import math
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 class DetectorNode:
     def __init__(self):
@@ -77,7 +77,7 @@ class DetectorNode:
         self.frames_sent_to_detector = 0
         self.detected_frames = 0
         # Uncertainty estimation
-        self.total_kp = 0
+        self.failed_detections = 0
         self.kp_predictions = []
         self.cov_matrices = np.empty((8, 8, 0), np.float)
         self.prediction_errors = []
@@ -171,6 +171,7 @@ class DetectorNode:
                     cov_matrix = np.matmul(single_img_pred, np.transpose(single_img_pred))
                     sum_cov_mtx += cov_matrix
                 print(sum_cov_mtx / len(self.prediction_errors))
+                print("Fails ratio", self.failed_detections / self.frames_sent_to_detector * 100)
                 break
 
 
@@ -194,6 +195,7 @@ class DetectorNode:
                         cov_matrices = np.matmul(single_img_pred, np.transpose(single_img_pred))
                         sum_cov_mtx += cov_matrices
                     print(sum_cov_mtx / len(self.prediction_errors))
+                    print("Fails ratio", self.failed_detections / self.frames_sent_to_detector * 100)
                 if self.detector.bottom:
                     self.detect(self.pointgrey_image, self.pointgrey_image_msg.header.stamp, self.frame_gt)
                 else:
@@ -247,14 +249,15 @@ class DetectorNode:
 
     def detect(self, frame, stamp, gt_pose):
         start_time = time.time()
-        # disp = np.copy(frame)
+        disp = np.copy(frame)
         working_copy = np.copy(frame)
         self.detector.detect(working_copy, gt_pose, self.gt_keypoints)
         self.frames_sent_to_detector += 1
         if self.detector.best_detection is not None:
             self.keypoints = self.detector.best_detection['keypoints']
             # color = (255, 255, 255)
-            # for i, pt in enumerate(self.keypoints):
+            for i, pt in enumerate(self.keypoints):
+                gt_kp = self.gt_keypoints[i]
             #     if i == 0:
             #         color = (255, 255, 255)
             #     elif i == 1:
@@ -265,19 +268,22 @@ class DetectorNode:
             #         color = (0, 255, 255)
             #     else:
             #         color = (255, 0, 255)
-            #     cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, color, -1)
+                cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, (255, 255, 255), -1)
+                cv2.circle(disp, gt_kp, 5, (255, 0, 255), -1)
+            cv2.imshow("detection", disp)
+            # cv2.waitKey(0)
             self.detected_frames += 1
             if self.detector.bottom:
                 camera_matrix = self.pointgrey_camera_matrix
             else:
                 camera_matrix = self.blackfly_camera_matrix
-            if self.detector.best_detection['score'] > 0.5:
-                # self.keypoints = np.multiply(self.keypoints, 1 / self.detector.scale)
-                self.publish_keyponts(stamp)
-                self.publish_pose(stamp, camera_matrix)
-                # self.detector.scale = 1.0
-        self.blackfly_image = None
-        print("detection time:", time.time() - start_time)
+            # if self.detector.best_detection['score'] > 0.5:
+            # self.keypoints = np.multiply(self.keypoints, 1 / self.detector.scale)
+            self.publish_keyponts(stamp)
+            # self.publish_pose(stamp, camera_matrix)
+            # self.detector.scale = 1.0
+            self.blackfly_image = None
+            print("detection time:", time.time() - start_time)
 
     def publish_pose(self, stamp, camera_matrix):
         tvec, rvec = self.pose_estimator.calc_PnP_pose(self.keypoints, camera_matrix)
@@ -298,20 +304,18 @@ class DetectorNode:
             self.posePublisher_front.publish(out_msg)
 
     def publish_keyponts(self, stamp):
-
         def calc_dist(x, z):
             # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
             return abs(x[0] - z[0]), abs(x[1] - z[1])
 
         single_img_pred = []
         for idx, kp in enumerate(self.keypoints):
-            # print(len(self.gt_keypoints))
-            # print("kp", len(self.keypoints))
-            if calc_dist(kp, self.gt_keypoints[idx])[1] > 150:
+            if calc_dist(kp, self.gt_keypoints[idx])[1] > 50:
+                self.failed_detections += 1
+                print("Fails ratio", self.failed_detections / self.frames_sent_to_detector * 100)
                 return
             single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
-        self.prediction_errors.append(
-            np.array(single_img_pred).reshape((8, 1)))  # calc_dist(kp, self.gt_keypoints[idx]))
+        self.prediction_errors.append(np.array(single_img_pred).reshape((8, 1)))
 
 
 if __name__ == '__main__':
