@@ -42,7 +42,7 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model_front = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model_front = "/root/share/tf/Keras/2_09_heatmap_unc"
+        path_to_model_front = "/root/share/tf/Keras/7_09_heatmap_unc"
         # path_to_model_front = "/root/share/tf/Keras/22_07_residual_kp_big_head"
         # path_to_model_front = "/root/share/tf/Keras/3_07_PP_5_separate_uncertainty_UGLLI_loss"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
@@ -62,6 +62,7 @@ class DetectorNode:
         # self.pitch = None
         # self.frame_pitch = None
         self.keypoints = None
+        self.uncertainty = None
         self.gt_keypoints = []
         # self.gt_keypoints_slice = []
         self.blackfly_image_msg = None
@@ -84,7 +85,8 @@ class DetectorNode:
 
         # Initialize detector
         self.pointgrey_frame_shape = (5, 5)  # self.get_image_shape(self.pointgrey_topic)
-        self.frame_shape = (960, 960)  # self.get_image_shape(self.blackfly_topic)
+        # self.frame_shape = (960, 960)
+        self.frame_shape = self.get_image_shape(self.blackfly_topic)
         self.detector = Detector(path_to_model_front,
                                  path_to_pole_model)  # , path_to_model_bottom=path_to_model_bottom)
         self.detector.init_size(self.frame_shape)
@@ -99,80 +101,67 @@ class DetectorNode:
 
 
     def start(self):
-        # rospy.Subscriber(self.blackfly_topic, CompressedImage, self.update_blackfly_image, queue_size=1)
+        rospy.Subscriber(self.blackfly_topic, CompressedImage, self.update_blackfly_image, queue_size=1)
         # rospy.Subscriber(self.pointgrey_topic, CompressedImage, self.update_pointgrey_image, queue_size=1)
         # rospy.Subscriber(self.imu_topic, Imu, self.get_pitch, queue_size=1)
         rospy.Subscriber(self.gt_pose_topic, PoseStamped, self.update_gt, queue_size=1)
         # rospy.wait_for_message(self.pointgrey_topic, CompressedImage)
-        # rospy.wait_for_message(self.blackfly_topic, CompressedImage)
+        rospy.wait_for_message(self.blackfly_topic, CompressedImage)
         # base_path = '/root/share/tf/dataset/14_08_4pts_960_ROI_448'
-        base_path = '/root/share/tf/dataset/4_point_aug_960_centered/val/'
+        # base_path = '/root/share/tf/dataset/4_point_aug_960_centered/val/'
         # base_path = '/root/share/tf/dataset/4_point_aug_1280_centered/val/'
-        images = os.listdir(os.path.join(base_path, 'annotations'))
-        # random.shuffle(images)
-        # images.sort(reverse=False)
-        images = iter(images)
+        # images = os.listdir(os.path.join(base_path, 'annotations'))
+        # images = iter(images)
         while not rospy.is_shutdown():
-            self.gt_keypoints = []
-            try:
-                fname = next(images)
-                # if 'train1' in fname:
-                img_fname = base_path + 'images/' + fname[:-4] + '.png'
-                ann_fname = base_path + 'annotations/' + fname
-                # print(img_fname)
-
-                tree = ET.parse(ann_fname)
-                root = tree.getroot()
-                if not os.path.exists(img_fname):
-                    continue
-                self.blackfly_image = cv2.imread(img_fname)
-                # self.image = cv2.resize(image, None, fx=self.detector.scale, fy=self.detector.scale)
-                # self.frame_shape = self.blackfly_image.shape[:2]
-                # self.detector.init_size(self.frame_shape)
-                # print("fr_sh", self.frame_shape)
-                # label = cv2.imread(label_fname) * 255
-                size = root.find('size')
-                w = int(size.find('width').text)
-                h = int(size.find('height').text)
-                offset_x = int(root.find('offset_x').text)
-                offset_y = int(root.find('offset_y').text)
-                # print("offsets", offset_y, offset_x)
-                for object in root.findall('object'):
-                    scale = float(object.find('scale').text)
-                    # print("scale", scale)
-                    bbox = object.find('bndbox')
-
-                    xmin = int(float(bbox.find('xmin').text) * w)
-                    ymin = int(float(bbox.find('ymin').text) * h)
-                    xmax = int(float(bbox.find('xmax').text) * w)
-                    ymax = int(float(bbox.find('ymax').text) * h)
-
-                    # image = self.blackfly_image[ymin:ymax, xmin:xmax]
-                    # self.blackfly_image = cv2.resize(image, (w, h))
-
-                    kps = object.find('keypoints')
-                    # keypoints = []
-                    # print(kps.find('keypoint6'))
-                    for i in range(4):
-                        kp = kps.find('keypoint' + str(i))
-                        self.gt_keypoints.append(
-                            (int(float(kp.find('x').text) * w), int((float(kp.find('y').text) * h))))
-                    # for i, kp in enumerate(keypoints):
-                    #     self.gt_keypoints.append(
-                    #         ((int(kp[0] * w)), (int(kp[1] * h))))
-            except StopIteration:
-                # sum_cov_mtx = np.zeros((10, 10))
-                sum_cov_mtx = np.zeros((8, 8))
-                for single_img_pred in self.prediction_errors:
-                    # print(np.average(self.kp_predictions, axis=0))
-                    # single_img_error = single_img_pred - np.average(self.prediction_errors)
-                    # print(single_img_pred.shape)
-                    # print(np.transpose(single_img_pred).shape)
-                    cov_matrix = np.matmul(single_img_pred, np.transpose(single_img_pred))
-                    sum_cov_mtx += cov_matrix
-                print(sum_cov_mtx / len(self.prediction_errors))
-                print("Fails ratio", self.failed_detections / self.frames_sent_to_detector * 100)
-                break
+            #     self.gt_keypoints = []
+            #     try:
+            #         fname = next(images)
+            #         # if 'train1' in fname:
+            #         img_fname = base_path + 'images/' + fname[:-4] + '.png'
+            #         ann_fname = base_path + 'annotations/' + fname
+            #         # print(img_fname)
+            #
+            #         tree = ET.parse(ann_fname)
+            #         root = tree.getroot()
+            #         if not os.path.exists(img_fname):
+            #             continue
+            #         self.blackfly_image = cv2.imread(img_fname)
+            #
+            #         size = root.find('size')
+            #         w = int(size.find('width').text)
+            #         h = int(size.find('height').text)
+            #         for object in root.findall('object'):
+            #             scale = float(object.find('scale').text)
+            #             # print("scale", scale)
+            #             bbox = object.find('bndbox')
+            #
+            #             xmin = int(float(bbox.find('xmin').text) * w)
+            #             ymin = int(float(bbox.find('ymin').text) * h)
+            #             xmax = int(float(bbox.find('xmax').text) * w)
+            #             ymax = int(float(bbox.find('ymax').text) * h)
+            #
+            #             # image = self.blackfly_image[ymin:ymax, xmin:xmax]
+            #             # self.blackfly_image = cv2.resize(image, (w, h))
+            #
+            #             kps = object.find('keypoints')
+            #             # keypoints = []
+            #             # print(kps.find('keypoint6'))
+            #             for i in range(4):
+            #                 kp = kps.find('keypoint' + str(i))
+            #                 self.gt_keypoints.append(
+            #                     (int(float(kp.find('x').text) * w), int((float(kp.find('y').text) * h))))
+            #             # for i, kp in enumerate(keypoints):
+            #             #     self.gt_keypoints.append(
+            #             #         ((int(kp[0] * w)), (int(kp[1] * h))))
+            #     except StopIteration:
+            #         # sum_cov_mtx = np.zeros((10, 10))
+            #         sum_cov_mtx = np.zeros((8, 8))
+            #         for single_img_pred in self.prediction_errors:
+            #             cov_matrix = np.matmul(single_img_pred, np.transpose(single_img_pred))
+            #             sum_cov_mtx += cov_matrix
+            #         print(sum_cov_mtx / len(self.prediction_errors))
+            #         print("Fails ratio", self.failed_detections / self.frames_sent_to_detector * 100)
+            #         break
 
 
 
@@ -180,18 +169,13 @@ class DetectorNode:
                 self.frame_gt = self.gt_pose
                 # self.frame_pitch = self.pitch
                 # self.frame_scale = self.detector.scale
-                k = cv2.waitKey(500)
+                k = cv2.waitKey(5)
                 if k == ord('q') or k == 27:
                     exit(0)
                 if k == ord('z'):
                     # sum_cov_mtx = np.zeros((10, 10))
                     sum_cov_mtx = np.zeros((8, 8))
                     for single_img_pred in self.prediction_errors:
-                        # print("avg", np.average(self.prediction_errors, axis=0).shape, "\n",  np.average(self.prediction_errors, axis=0))
-                        # single_img_error = single_img_pred - np.average(self.prediction_errors, axis=0)
-                        # print("single_img_pred", single_img_pred.shape)
-                        # print("single_img_error", single_img_error.shape)
-                        # cov_matrices = np.matmul(single_img_error, np.transpose(single_img_error))
                         cov_matrices = np.matmul(single_img_pred, np.transpose(single_img_pred))
                         sum_cov_mtx += cov_matrices
                     print(sum_cov_mtx / len(self.prediction_errors))
@@ -199,10 +183,10 @@ class DetectorNode:
                 if self.detector.bottom:
                     self.detect(self.pointgrey_image, self.pointgrey_image_msg.header.stamp, self.frame_gt)
                 else:
-                    self.detect(self.blackfly_image, None, self.frame_gt)
-                    # self.detect(self.blackfly_image, self.blackfly_image_msg.header.stamp, self.frame_gt)
+                    # self.detect(self.blackfly_image, None, self.frame_gt)
+                    self.detect(self.blackfly_image, self.blackfly_image_msg.header.stamp, self.frame_gt)
 
-        self.detector.yolo.close_session()
+        # self.detector.yolo.close_session()
         rospy.spin()
 
     # def get_pitch(self, imu_msg):
@@ -255,22 +239,17 @@ class DetectorNode:
         self.frames_sent_to_detector += 1
         if self.detector.best_detection is not None:
             self.keypoints = self.detector.best_detection['keypoints']
-            # color = (255, 255, 255)
+            self.uncertainty = self.detector.best_detection['uncertainty']
+            print("unc", self.uncertainty)
             for i, pt in enumerate(self.keypoints):
-                gt_kp = self.gt_keypoints[i]
-            #     if i == 0:
-            #         color = (255, 255, 255)
-            #     elif i == 1:
-            #         color = (255, 0, 0)
-            #     elif i == 2:
-            #         color = (0, 255, 0)
-            #     elif i == 3:
-            #         color = (0, 255, 255)
-            #     else:
-            #         color = (255, 0, 255)
-                cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, (255, 255, 255), -1)
-                cv2.circle(disp, gt_kp, 5, (255, 0, 255), -1)
-            cv2.imshow("detection", disp)
+                sigma = self.uncertainty[i]
+                print("sigma:", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
+                # gt_kp = self.gt_keypoints[i]
+                cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, (0, 0, 255), -1)
+                cv2.ellipse(disp, (int(pt[0]), int(pt[1])), (int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1]))),
+                            angle=0, startAngle=0, endAngle=360, color=(0, 255, 255), thickness=3)
+                # cv2.circle(disp, gt_kp, 5, (255, 0, 255), -1)
+            cv2.imshow("detection", cv2.resize(disp, self.detector.slice_size))
             # cv2.waitKey(0)
             self.detected_frames += 1
             if self.detector.bottom:
@@ -279,8 +258,8 @@ class DetectorNode:
                 camera_matrix = self.blackfly_camera_matrix
             # if self.detector.best_detection['score'] > 0.5:
             # self.keypoints = np.multiply(self.keypoints, 1 / self.detector.scale)
-            self.publish_keyponts(stamp)
-            # self.publish_pose(stamp, camera_matrix)
+            # self.publish_keyponts(stamp)
+            self.publish_pose(stamp, camera_matrix)
             # self.detector.scale = 1.0
             self.blackfly_image = None
             print("detection time:", time.time() - start_time)

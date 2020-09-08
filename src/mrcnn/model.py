@@ -1554,15 +1554,35 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
 
     print("target_kp", target_kp)
     input_shape = parse_image_meta_graph(image_meta)['image_shape']
-    input_shape = K.expand_dims(input_shape, axis=0)
+    # input_shape = K.expand_dims(input_shape, axis=0)
     # input_shape = K.cast(input_shape, dtype=tf.float32)
     print("input_shape", input_shape)
     pred_kp = K.permute_dimensions(pred_kp, (0, 1, 4, 2, 3))
     print("pred_kp", pred_kp)
-    print("argmax", K.argmax(pred_kp, axis=3))
-    print("argmax", K.argmax(pred_kp[..., 0], axis=3))
-    x = K.cast(K.argmax(pred_kp, axis=3)[..., 0], dtype=tf.float32) / input_shape[..., 0]  # TODO: verify
-    y = K.cast(K.argmax(pred_kp, axis=4)[..., 0], dtype=tf.float32) / input_shape[..., 1]
+    # print("argmax", K.argmax(pred_kp, axis=3))
+    # print("argmax", K.argmax(pred_kp[..., 0], axis=3))
+    # x = K.cast(K.argmax(pred_kp, axis=3)[..., 0], dtype=tf.float32) / input_shape[..., 0]  # TODO: verify
+    # y = K.cast(K.argmax(pred_kp, axis=4)[..., 0], dtype=tf.float32) / input_shape[..., 1]
+    pred_kp = pred_kp / K.max(pred_kp, axis=(3, 4), keepdims=True)
+    pred_kp *= K.cast(K.greater_equal(pred_kp, 0.8), tf.float32)
+    # input_shape = tf.Print(input_shape, [input_shape], summarize=-1)
+    print("K.sum(pred_kp, axis=3)*K.arange(0, stop=input_shape[0, 0]), axis=3",
+          K.sum(pred_kp, axis=3) * K.arange(0, stop=input_shape[0, 0]))
+    # x = K.mean(K.sum(pred_kp, axis=4)*K.arange(0, stop=input_shape[0, 1]), axis=-1)/K.sum(K.sum(pred_kp, axis=-1), axis=-1)*input_shape[..., 1]
+    # y = K.mean(K.sum(pred_kp, axis=3)*K.arange(0, stop=input_shape[0, 0]), axis=-1)/K.sum(K.sum(pred_kp, axis=-1), axis=-1)*input_shape[..., 0]
+    x = K.mean(K.sum(pred_kp, axis=4) * K.arange(0, stop=input_shape[0, 1]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
+        input_shape[..., 1]
+    y = K.mean(K.sum(pred_kp, axis=3) * K.arange(0, stop=input_shape[0, 0]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
+        input_shape[..., 0]
+    # x = K.print_tensor(x, message="x")
+    # x = tf.Print(x, [x], summarize=-1)
+    # y = tf.Print(y, [y], summarize=-1)
+    # target_kp = tf.Print(target_kp, [target_kp], summarize=-1)
+    # y = K.print_tensor(y, message="y")
+    # target_kp = K.print_tensor(target_kp, message="target_kp")
+
+    # center = np.average(np.sum(mask, axis=1) * np.arange(w)) / np.sum(mask) * w, \
+    #          np.average(np.sum(mask, axis=0) * np.arange(h)) / np.sum(mask) * h
     pred_kp_float = K.stack([x, y], axis=-1)
     pred_kp_float = K.cast(pred_kp_float, dtype=tf.float32)
     # target_kp = K.cast(target_kp, dtype=tf.float32)
@@ -2617,6 +2637,7 @@ class MaskRCNN():
         # Pre-defined layer regular expressions
         layer_regex = {
             # all layers but the backbone
+            "uncertainty": r"(mrcnn\_uncertainty.*)",
             "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             # From a specific Resnet stage and up
             "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
@@ -2838,13 +2859,15 @@ class MaskRCNN():
             log("anchors", anchors)
         # Run object detection
         kp, uncertainty = self.keras_model.predict([molded_images, image_metas], verbose=0)
+
+        sigma = np.multiply(uncertainty, np.transpose(uncertainty, [0, 1, 2, 4, 3]))
         # Process detections
 
         results = []
         for i, image in enumerate(images):
             results.append({
                 "kp": kp,
-                "uncertainty": uncertainty
+                "uncertainty": sigma
             })
         return results
 

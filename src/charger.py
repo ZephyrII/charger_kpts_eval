@@ -104,7 +104,6 @@ class ChargerDataset(utils.Dataset):
                 bbox=np.array([xmin, ymin, xmax, ymax]))
 
     def load_image(self, image_id):
-        print("overloaded load_image function")
         image = cv2.imread(self.image_info[image_id]['path'])
         xmin, ymin, xmax, ymax = self.image_info[image_id]['bbox']
         # If grayscale. Convert to RGB for consistency.
@@ -144,9 +143,12 @@ class ChargerDataset(utils.Dataset):
             ymax = float(bbox.find('ymax').text) * h + self.increase_bbox_percent
             bw = (xmax - xmin) * w
             bh = (ymax - ymin) * h
-            for i in range(num_points):
-                kp = kps.find('keypoint' + str(i))
-                point_size = 5
+            for i in range(num_points):  # TODO: remove
+                if i >= 2:
+                    kp = kps.find('keypoint' + str(i + 1))
+                else:
+                    kp = kps.find('keypoint' + str(i))
+                point_size = 1
                 point_center = (
                 int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)),
                 int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)))

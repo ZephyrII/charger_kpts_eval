@@ -7,6 +7,7 @@ from mrcnn.config import Config
 from mrcnn import model as modellib
 from YOLO.yolo import YOLO
 from PIL import Image
+from sklearn.cluster import DBSCAN
 
 try:
     from cv2 import cv2
@@ -168,25 +169,50 @@ class Detector:
             r = self.det_model.detect([image_np], verbose=0)[0]
         print("kp detection time:", time.time() - start_time)
 
+        uncertainty = r['uncertainty'][0][0]
         kps = r['kp'][0][0]
         kps = np.transpose(kps, (2, 0, 1))
         absolute_kp = []
 
         for i, kp in enumerate(kps):
-            center = np.unravel_index(kp.argmax(), kp.shape)
+            # center = np.unravel_index(kp.argmax(), kp.shape)
+            # kp = kp/np.max(kp)
             h, w = kp.shape
-            ret, kp = cv2.threshold(kp, 0.8, 1.0, cv2.THRESH_BINARY)
-            # if np.sum(kp)==0:
-            #     center=(0,0)
-            # else:
-            #     center = np.average(np.sum(kp, axis=1)*np.arange(w))/np.sum(kp)*w, \
-            #               np.average(np.sum(kp, axis=0)*np.arange(h))/np.sum(kp)*h
-            absolute_kp.append(((center[1] * self.scale[0] + self.bbox[0]) * self.frame_shape[1] / self.slice_size[1],
-                                (center[0] * self.scale[1] + self.bbox[1]) * self.frame_shape[0] / self.slice_size[0]))
+            # ret, kp = cv2.threshold(kp, 0.85, 1.0, cv2.THRESH_BINARY)
+            ret, kp = cv2.threshold(kp, 0.4, 1.0, cv2.THRESH_BINARY)
+            X = np.argwhere(kp == 1)
+            print("X.shape", X.shape)
+            clustering = DBSCAN(eps=3, min_samples=2)
+            clustering.fit(X)
+            cluster_scores = []
+            print("unique clusters", np.unique(clustering.labels_))
+            for i in np.unique(clustering.labels_):
+                cluster = X[np.where(clustering.labels_ == i)]
+                cluster_scores.append(np.sum(kp[cluster[:, 0], cluster[:, 1]]))
+                print("cluster sum", np.sum(kp[cluster[:, 0], cluster[:, 1]]))
 
-            # cv2.imshow('mask', cv2.resize(kp, (960, 960)))
-            # cv2.waitKey(0)
-        self.best_detection = dict(keypoints=absolute_kp, uncertainty=np.array([]))
+            cluster = X[np.where(clustering.labels_ == clustering.labels_[np.argmax(cluster_scores)])]
+            print("np.argmax(cluster_scores)", np.argmax(cluster_scores))
+            print("sum_best_cluster", np.sum(kp[cluster[:, 0], cluster[:, 1]]))
+            # cluster = X[np.where(clustering.labels_ == np.argmax(cluster_scores))]
+            mask = np.zeros_like(kp)
+            mask[cluster[:, 0], cluster[:, 1]] = 1.0
+            if np.sum(mask) == 0:
+                center = (0, 0)
+            else:
+                center = np.average(np.sum(mask, axis=1) * np.arange(w)) / np.sum(mask) * w, \
+                         np.average(np.sum(mask, axis=0) * np.arange(h)) / np.sum(mask) * h
+            absolute_kp.append(
+                ((center[1] * self.scale[0] + self.bbox[0]),  # * self.frame_shape[1] / self.slice_size[1],
+                 (center[0] * self.scale[1] + self.bbox[1])))  # * self.frame_shape[0] / self.slice_size[0]))
+
+            # alpha=0.9
+            # kp = cv2.cvtColor(kp, cv2.COLOR_GRAY2BGR)
+            # cv2.circle(kp, (center[1], center[0]), 10, (255,0,255), 1)
+            # out = cv2.addWeighted(kp, alpha, image_np, 1.0-alpha, 1.0, dtype=1)
+            cv2.imshow('mask', cv2.resize(kp, (960, 960)))
+            cv2.waitKey(0)
+        self.best_detection = dict(keypoints=absolute_kp, uncertainty=uncertainty)
 
     def detect(self, frame, gt_pose, gt_kp):
         self.gt_kp = gt_kp
@@ -194,10 +220,9 @@ class Detector:
         self.detections = []
         self.best_detection = None
         self.init_detection(frame)
-        if len(self.detections) == 0:
+        # if len(self.detections) == 0:
+        if self.best_detection is None:
             print("No detections")
-        if self.best_detection is not None:
-            pass
         return
 
     def get_slice(self, frame, offset=None):
@@ -212,20 +237,21 @@ class Detector:
         start_time = time.time()
         small_frame = cv2.resize(frame, (self.slice_size[1], self.slice_size[0]))
 
-        box = self.yolo.detect_image(Image.fromarray(small_frame))
-        ymin, xmin, ymax, xmax = box
-
-
-
-        # cv2.waitKey(10)
-        # xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
-        self.bbox = [xmin, ymin, xmax, ymax]
-        frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
-        print("pole detection time:", time.time() - start_time)
+        ymin, xmin, ymax, xmax = self.yolo.detect_image(Image.fromarray(small_frame))
+        # self.scale = ((xmax - xmin) / self.slice_size[0], (ymax - ymin) / self.slice_size[1])
+        # self.bbox = [xmin, ymin, xmax, ymax]
+        ymin = int(ymin * frame.shape[0] / self.slice_size[0])
+        ymax = int(ymax * frame.shape[0] / self.slice_size[0])
+        xmin = int(xmin * frame.shape[1] / self.slice_size[1])
+        xmax = int(xmax * frame.shape[1] / self.slice_size[1])
         self.scale = ((xmax - xmin) / self.slice_size[0], (ymax - ymin) / self.slice_size[1])
+        self.bbox = [xmin, ymin, xmax, ymax]
+
+        frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
+        # xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
         print("pole detection time:", time.time() - start_time)
 
-        self.get_CNN_output(self.get_slice(frame))
+        self.get_CNN_output(frame)
 
     def detect_pole(self, small_frame):
         image_np_expanded = np.expand_dims(small_frame, axis=0)
