@@ -1554,61 +1554,25 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
 
     print("target_kp", target_kp)
     input_shape = parse_image_meta_graph(image_meta)['image_shape']
-    # input_shape = K.expand_dims(input_shape, axis=0)
-    # input_shape = K.cast(input_shape, dtype=tf.float32)
-    print("input_shape", input_shape)
     pred_kp = K.permute_dimensions(pred_kp, (0, 1, 4, 2, 3))
-    print("pred_kp", pred_kp)
-    # print("argmax", K.argmax(pred_kp, axis=3))
-    # print("argmax", K.argmax(pred_kp[..., 0], axis=3))
-    # x = K.cast(K.argmax(pred_kp, axis=3)[..., 0], dtype=tf.float32) / input_shape[..., 0]  # TODO: verify
-    # y = K.cast(K.argmax(pred_kp, axis=4)[..., 0], dtype=tf.float32) / input_shape[..., 1]
     pred_kp = pred_kp / K.max(pred_kp, axis=(3, 4), keepdims=True)
     pred_kp *= K.cast(K.greater_equal(pred_kp, 0.8), tf.float32)
-    # input_shape = tf.Print(input_shape, [input_shape], summarize=-1)
-    print("K.sum(pred_kp, axis=3)*K.arange(0, stop=input_shape[0, 0]), axis=3",
-          K.sum(pred_kp, axis=3) * K.arange(0, stop=input_shape[0, 0]))
-    # x = K.mean(K.sum(pred_kp, axis=4)*K.arange(0, stop=input_shape[0, 1]), axis=-1)/K.sum(K.sum(pred_kp, axis=-1), axis=-1)*input_shape[..., 1]
-    # y = K.mean(K.sum(pred_kp, axis=3)*K.arange(0, stop=input_shape[0, 0]), axis=-1)/K.sum(K.sum(pred_kp, axis=-1), axis=-1)*input_shape[..., 0]
+
     x = K.mean(K.sum(pred_kp, axis=4) * K.arange(0, stop=input_shape[0, 1]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
         input_shape[..., 1]
     y = K.mean(K.sum(pred_kp, axis=3) * K.arange(0, stop=input_shape[0, 0]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
         input_shape[..., 0]
-    # x = K.print_tensor(x, message="x")
-    # x = tf.Print(x, [x], summarize=-1)
-    # y = tf.Print(y, [y], summarize=-1)
-    # target_kp = tf.Print(target_kp, [target_kp], summarize=-1)
-    # y = K.print_tensor(y, message="y")
-    # target_kp = K.print_tensor(target_kp, message="target_kp")
-
-    # center = np.average(np.sum(mask, axis=1) * np.arange(w)) / np.sum(mask) * w, \
-    #          np.average(np.sum(mask, axis=0) * np.arange(h)) / np.sum(mask) * h
     pred_kp_float = K.stack([x, y], axis=-1)
     pred_kp_float = K.cast(pred_kp_float, dtype=tf.float32)
-    # target_kp = K.cast(target_kp, dtype=tf.float32)
-    print("pred_kp", pred_kp_float)
-    print("target_kp", target_kp)
-    print("L", L)
-
     sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)))  # , axes=(4, 3))
-
     sigma_loss = sigma
+    # inv_sigma = tf.linalg.inv(sigma)
+    # mahalanobis = K.batch_dot(K.expand_dims(target_kp - pred_kp_float, -2), inv_sigma)
+    # mahalanobis = K.batch_dot(mahalanobis, K.expand_dims(target_kp - pred_kp_float, -1))
 
-    # sigma = K.print_tensor(sigma, "mysigma")
-    # sigma = tf.Print(sigma, [sigma], summarize=-1)
-
-    # det = sigma[:, :, 0, 0]*sigma[:, :, 1, 1]-sigma[:, :, 0, 1]*sigma[:, :, 1, 0]
-    inv_sigma = tf.linalg.inv(sigma)
     # inv_sigma = K.stack([K.stack([sigma[:, :, 1, 1] / det, -sigma[:, :, 0, 1] / det], axis=-1),
     #                  K.stack([-sigma[:, :, 1, 0] / det, sigma[:, :, 0, 0] / det], axis=-1)], axis=-1)
-
-    # print("inv_sigma",inv_sigma)
-    # print("target_kp",target_kp)
-    # print("pred_kp",pred_kp)
-    mahalanobis = K.batch_dot(K.expand_dims(target_kp - pred_kp_float, -2), inv_sigma)
-    mahalanobis = K.batch_dot(mahalanobis, K.expand_dims(target_kp - pred_kp_float, -1))
-    print("mahalanobis", mahalanobis)
-    loss = K.mean(mahalanobis) + K.mean(sigma_loss)
+    loss = K.mean(sigma_loss)  # +K.mean(mahalanobis)
 
     return loss
 
@@ -1686,19 +1650,6 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
     kp_heatmap, kp = dataset.load_kp(image_id, config.NUM_POINTS)
     xmin, ymin, xmax, ymax = dataset.load_bbox(image_id)
     bbox = dataset.load_bbox(image_id)
-    # bbox = np.array([ymin, xmin, ymax, xmax])
-    # mask, class_ids, kp = dataset.query_gt(image_id)
-
-    # for i, k in enumerate(kp):  # range(int(len(kps) / 2)):
-    #     coords = np.unravel_index(k.argmax(), k.shape)
-    #     k = np.float32(k)
-    #     k = cv2.cvtColor(k, cv2.COLOR_GRAY2BGR)
-    #     print(coords)
-    #     alpha = 0.6
-    #     out_img = cv2.addWeighted(k, alpha, np.float32(image/255), 1 - alpha, 0)
-    #     # cv2.circle(out_img, coords, 10, (255, 255, 255), -1)
-    #     cv2.imshow("lol", out_img)
-    #     cv2.waitKey(0)
 
     original_shape = image.shape
     image, window, scale, padding, crop = utils.resize_image(
@@ -1709,11 +1660,6 @@ def load_image_gt(dataset, config, image_id, augment=False, augmentation=None,
         mode=config.IMAGE_RESIZE_MODE)
     # mask = utils.resize_mask(mask, scale, padding, crop)
     bbox = bbox * scale
-    # disp = np.copy(image)
-    # cv2.rectangle(disp, (int(bbox[0]), int(bbox[1])), (int(bbox[2]), int(bbox[3])), (0, 0, 255), 4)
-    # cv2.imshow("lol", disp)
-    # cv2.waitKey(10)
-    # top_pad = 0  # (config.IMAGE_MAX_DIM - 720) // 2
     bbox = np.array([[bbox[1], bbox[0], bbox[3], bbox[2]],
                      [bbox[1], bbox[0], bbox[3], bbox[2]],
                      [bbox[1], bbox[0], bbox[3], bbox[2]]])
@@ -2638,11 +2584,11 @@ class MaskRCNN():
         layer_regex = {
             # all layers but the backbone
             "uncertainty": r"(mrcnn\_uncertainty.*)",
-            "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            "heads": r"(mrcnn\_.*)|(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
             # From a specific Resnet stage and up
             "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
-            "5+": r"(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            "5+": r"(res5.*)|(bn5.*)|(mrcnn\_[^u]*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             # All layers
             "all": ".*",
         }

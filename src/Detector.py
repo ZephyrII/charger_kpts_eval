@@ -176,27 +176,33 @@ class Detector:
 
         for i, kp in enumerate(kps):
             # center = np.unravel_index(kp.argmax(), kp.shape)
-            # kp = kp/np.max(kp)
+            kp = kp / np.max(kp)
             h, w = kp.shape
             # ret, kp = cv2.threshold(kp, 0.85, 1.0, cv2.THRESH_BINARY)
-            ret, kp = cv2.threshold(kp, 0.4, 1.0, cv2.THRESH_BINARY)
+            ret, kp = cv2.threshold(kp, 0.2, 1.0, cv2.THRESH_BINARY)
             X = np.argwhere(kp == 1)
+            if X.shape[0] == 0:
+                absolute_kp.append((0, 0))
+                heatmap_uncertainty = np.array([[np.inf, np.inf], [np.inf, np.inf]])
+                continue
             print("X.shape", X.shape)
             clustering = DBSCAN(eps=3, min_samples=2)
             clustering.fit(X)
             cluster_scores = []
-            print("unique clusters", np.unique(clustering.labels_))
+            unique_labels = np.unique(clustering.labels_)
+            print("unique clusters", unique_labels)
             for i in np.unique(clustering.labels_):
                 cluster = X[np.where(clustering.labels_ == i)]
                 cluster_scores.append(np.sum(kp[cluster[:, 0], cluster[:, 1]]))
-                print("cluster sum", np.sum(kp[cluster[:, 0], cluster[:, 1]]))
-
-            cluster = X[np.where(clustering.labels_ == clustering.labels_[np.argmax(cluster_scores)])]
+            print("cluster_scores", cluster_scores)
             print("np.argmax(cluster_scores)", np.argmax(cluster_scores))
-            print("sum_best_cluster", np.sum(kp[cluster[:, 0], cluster[:, 1]]))
-            # cluster = X[np.where(clustering.labels_ == np.argmax(cluster_scores))]
+            print("np.unique(clustering.labels_)[np.argmax(cluster_scores)]", unique_labels[np.argmax(cluster_scores)])
+            cluster = X[np.where(clustering.labels_ == unique_labels[np.argmax(cluster_scores)])]
+            # print("cluster", cluster)
+            # print("components_", clustering.components_)
             mask = np.zeros_like(kp)
             mask[cluster[:, 0], cluster[:, 1]] = 1.0
+            heatmap_uncertainty = np.cov(cluster.T)
             if np.sum(mask) == 0:
                 center = (0, 0)
             else:
@@ -210,9 +216,12 @@ class Detector:
             # kp = cv2.cvtColor(kp, cv2.COLOR_GRAY2BGR)
             # cv2.circle(kp, (center[1], center[0]), 10, (255,0,255), 1)
             # out = cv2.addWeighted(kp, alpha, image_np, 1.0-alpha, 1.0, dtype=1)
-            cv2.imshow('mask', cv2.resize(kp, (960, 960)))
-            cv2.waitKey(0)
-        self.best_detection = dict(keypoints=absolute_kp, uncertainty=uncertainty)
+            cv2.imshow('yolo out', cv2.resize(image_np, (960, 960)))
+            cv2.imshow('kp', cv2.resize(kp, (960, 960)))
+            print("center", center)
+            # cv2.waitKey(0)
+        self.best_detection = dict(keypoints=absolute_kp, uncertainty=uncertainty,
+                                   heatmap_uncertainty=heatmap_uncertainty)
 
     def detect(self, frame, gt_pose, gt_kp):
         self.gt_kp = gt_kp
@@ -244,6 +253,12 @@ class Detector:
         ymax = int(ymax * frame.shape[0] / self.slice_size[0])
         xmin = int(xmin * frame.shape[1] / self.slice_size[1])
         xmax = int(xmax * frame.shape[1] / self.slice_size[1])
+        margin = (xmax - xmin) * 0.02, (ymax - ymin) * 0.02
+
+        xmin -= int(6 * margin[0])
+        ymin -= int(margin[1])
+        xmax += int(margin[0])
+        ymax += int(margin[1])
         self.scale = ((xmax - xmin) / self.slice_size[0], (ymax - ymin) / self.slice_size[1])
         self.bbox = [xmin, ymin, xmax, ymax]
 

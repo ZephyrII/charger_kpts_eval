@@ -53,7 +53,7 @@ class ChargerDataset(utils.Dataset):
 
     def __init__(self, class_map=None):
         super().__init__(class_map=class_map)
-        self.increase_bbox_percent = 0.00
+        self.increase_bbox_percent = 0.05
 
     def load_charger(self, dataset_dir, subset):
         """Load a subset of the charger dataset.
@@ -132,33 +132,30 @@ class ChargerDataset(utils.Dataset):
         kp_maps = np.zeros((num_points, w, h), dtype=np.int32)
         for object in root.findall('object'):
             kps = object.find('keypoints')
-            bbox = object.find('bndbox')
-            # xmin = float(bbox.find('xmin').text)
-            # ymin = float(bbox.find('ymin').text)
-            # xmax = float(bbox.find('xmax').text)
-            # ymax = float(bbox.find('ymax').text)
-            xmin = float(bbox.find('xmin').text) * w - self.increase_bbox_percent
-            ymin = float(bbox.find('ymin').text) * h - self.increase_bbox_percent
-            xmax = float(bbox.find('xmax').text) * w + self.increase_bbox_percent
-            ymax = float(bbox.find('ymax').text) * h + self.increase_bbox_percent
-            bw = (xmax - xmin) * w
-            bh = (ymax - ymin) * h
             for i in range(num_points):  # TODO: remove
                 if i >= 2:
                     kp = kps.find('keypoint' + str(i + 1))
                 else:
                     kp = kps.find('keypoint' + str(i))
-                point_size = 1
+                point_size = 10
                 point_center = (
                 int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)),
                 int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)))
                 keypoints.append((point_center[1], point_center[0]))
                 # kp_maps[i, int(float(kp.find('y').text)*h), int(float(kp.find('x').text)*w)] = 1.0
-                kp_maps[i, point_center[0] - point_size:point_center[0] + point_size,
-                point_center[1] - point_size:point_center[1] + point_size] = 255
+                # kp_maps[i, point_center[0] - point_size:point_center[0] + point_size,
+                # point_center[1] - point_size:point_center[1] + point_size] = 255
+                cv2.circle(kp_maps[i], point_center, point_size, 255, -1)
+                # kp_maps[i, point_center[0], point_center[1]] = 255
                 # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (5,5), sigmaX=2)
                 # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (3,3), sigmaX=0)
-                # cv2.imshow('xddlol', kp_maps[i])
+                # image = self.load_image(image_id).astype(np.float32)/255
+                # kap = kp_maps[i].astype(np.float32)/255
+                # kap = cv2.cvtColor(kap, cv2.COLOR_GRAY2BGR)
+                # print("shapes", image.shape, kap.shape)
+                # alpha=0.8
+                # out = cv2.addWeighted(image, alpha, kap, 1-alpha, 0.0)
+                # cv2.imshow('xddlol', out)
                 # cv2.waitKey(0)
 
         return kp_maps, keypoints
