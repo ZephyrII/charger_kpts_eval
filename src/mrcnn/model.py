@@ -361,32 +361,32 @@ def inception_resnet_block(x, scale, block_type, block_idx, activation='relu'):
         ValueError: if `block_type` is not one of `'block35'`,
             `'block17'` or `'block8'`.
     """
+    block_name = block_type + '_' + str(block_idx)
     if block_type == 'block35':
-        branch_0 = conv2d_bn(x, 32, 1)
-        branch_1 = conv2d_bn(x, 32, 1)
-        branch_1 = conv2d_bn(branch_1, 32, 3)
-        branch_2 = conv2d_bn(x, 32, 1)
-        branch_2 = conv2d_bn(branch_2, 48, 3)
-        branch_2 = conv2d_bn(branch_2, 64, 3)
+        branch_0 = conv2d_bn(x, 32, 1, name=block_name + '_b0')
+        branch_1 = conv2d_bn(x, 32, 1, name=block_name + '_b1')
+        branch_1 = conv2d_bn(branch_1, 32, 3, name=block_name + '_b11')
+        branch_2 = conv2d_bn(x, 32, 1, name=block_name + '_b2')
+        branch_2 = conv2d_bn(branch_2, 48, 3, name=block_name + '_b22')
+        branch_2 = conv2d_bn(branch_2, 64, 3, name=block_name + '_b222')
         branches = [branch_0, branch_1, branch_2]
     elif block_type == 'block17':
-        branch_0 = conv2d_bn(x, 192, 1)
-        branch_1 = conv2d_bn(x, 128, 1)
-        branch_1 = conv2d_bn(branch_1, 160, [1, 7])
-        branch_1 = conv2d_bn(branch_1, 192, [7, 1])
+        branch_0 = conv2d_bn(x, 192, 1, name=block_name + '_b0')
+        branch_1 = conv2d_bn(x, 128, 1, name=block_name + '_b1')
+        branch_1 = conv2d_bn(branch_1, 160, [1, 7], name=block_name + '_b11')
+        branch_1 = conv2d_bn(branch_1, 192, [7, 1], name=block_name + '_b111')
         branches = [branch_0, branch_1]
     elif block_type == 'block8':
-        branch_0 = conv2d_bn(x, 192, 1)
-        branch_1 = conv2d_bn(x, 192, 1)
-        branch_1 = conv2d_bn(branch_1, 224, [1, 3])
-        branch_1 = conv2d_bn(branch_1, 256, [3, 1])
+        branch_0 = conv2d_bn(x, 192, 1, name=block_name + '_b0')
+        branch_1 = conv2d_bn(x, 192, 1, name=block_name + '_b1')
+        branch_1 = conv2d_bn(branch_1, 224, [1, 3], name=block_name + '_b11')
+        branch_1 = conv2d_bn(branch_1, 256, [3, 1], name=block_name + '_b111')
         branches = [branch_0, branch_1]
     else:
         raise ValueError('Unknown Inception-ResNet block type. '
                          'Expects "block35", "block17" or "block8", '
                          'but got: ' + str(block_type))
 
-    block_name = block_type + '_' + str(block_idx)
     channel_axis = 1 if K.image_data_format() == 'channels_first' else 3
     mixed = KL.Concatenate(axis=channel_axis, name=block_name + '_mixed')(branches)
     up = conv2d_bn(mixed,
@@ -417,24 +417,24 @@ def inc_resnet_graph(input_image, architecture, stage5=False, train_bn=True):
 
 
     # Stem block: 35 x 35 x 192
-    C1 = x = conv2d_bn(input_image, 32, 3, strides=2, padding='valid')
-    x = conv2d_bn(x, 32, 3, padding='valid')
-    x = conv2d_bn(x, 64, 3)
-    x = KL.MaxPooling2D(3, strides=2)(x)
-    x = conv2d_bn(x, 80, 1, padding='valid')
-    x = conv2d_bn(x, 192, 3, padding='valid')
-    C2 = KL.ZeroPadding2D(2)(x)
-    x = KL.MaxPooling2D(3, strides=2)(x)
+    C1 = x = conv2d_bn(input_image, 32, 3, strides=2, padding='valid', name="c01")
+    x = conv2d_bn(x, 32, 3, padding='valid', name="c02")
+    x = conv2d_bn(x, 64, 3, name="c03")
+    x = KL.MaxPooling2D(3, strides=2, name="mp01")(x)
+    x = conv2d_bn(x, 80, 1, padding='valid', name="c04")
+    x = conv2d_bn(x, 192, 3, padding='valid', name="c05")
+    C2 = KL.ZeroPadding2D(2, name="zp01")(x)
+    x = KL.MaxPooling2D(3, strides=2, name="mp02")(x)
 
     # Mixed 5b (Inception-A block): 35 x 35 x 320
-    branch_0 = conv2d_bn(x, 96, 1)
-    branch_1 = conv2d_bn(x, 48, 1)
-    branch_1 = conv2d_bn(branch_1, 64, 5)
-    branch_2 = conv2d_bn(x, 64, 1)
-    branch_2 = conv2d_bn(branch_2, 96, 3)
-    branch_2 = conv2d_bn(branch_2, 96, 3)
-    branch_pool = KL.AveragePooling2D(3, strides=1, padding='same')(x)
-    branch_pool = conv2d_bn(branch_pool, 64, 1)
+    branch_0 = conv2d_bn(x, 96, 1, name="c06")
+    branch_1 = conv2d_bn(x, 48, 1, name="c07")
+    branch_1 = conv2d_bn(branch_1, 64, 5, name="c08")
+    branch_2 = conv2d_bn(x, 64, 1, name="c09")
+    branch_2 = conv2d_bn(branch_2, 96, 3, name="c10")
+    branch_2 = conv2d_bn(branch_2, 96, 3, name="c11")
+    branch_pool = KL.AveragePooling2D(3, strides=1, padding='same', name="ap01")(x)
+    branch_pool = conv2d_bn(branch_pool, 64, 1, name="c12")
     branches = [branch_0, branch_1, branch_2, branch_pool]
     channel_axis = 1 if K.image_data_format() == 'channels_first' else 3
     x = KL.Concatenate(axis=channel_axis, name='mixed_5b')(branches)
@@ -447,12 +447,12 @@ def inc_resnet_graph(input_image, architecture, stage5=False, train_bn=True):
                                    block_idx=block_idx)
 
     # Mixed 6a (Reduction-A block): 17 x 17 x 1088
-    C3 = KL.ZeroPadding2D(((2, 1), (2, 1)))(x)
-    branch_0 = conv2d_bn(x, 384, 3, strides=2, padding='valid')
-    branch_1 = conv2d_bn(x, 256, 1)
-    branch_1 = conv2d_bn(branch_1, 256, 3)
-    branch_1 = conv2d_bn(branch_1, 384, 3, strides=2, padding='valid')
-    branch_pool = KL.MaxPooling2D(3, strides=2, padding='valid')(x)
+    C3 = KL.ZeroPadding2D(((2, 1), (2, 1)), name="zp02")(x)
+    branch_0 = conv2d_bn(x, 384, 3, strides=2, padding='valid', name="c13")
+    branch_1 = conv2d_bn(x, 256, 1, name="c14")
+    branch_1 = conv2d_bn(branch_1, 256, 3, name="c15")
+    branch_1 = conv2d_bn(branch_1, 384, 3, strides=2, padding='valid', name="c16")
+    branch_pool = KL.MaxPooling2D(3, strides=2, padding='valid', name="mp03")(x)
     branches = [branch_0, branch_1, branch_pool]
     x = KL.Concatenate(axis=channel_axis, name='mixed_6a')(branches)
 
@@ -464,15 +464,15 @@ def inc_resnet_graph(input_image, architecture, stage5=False, train_bn=True):
                                    block_idx=block_idx)
 
     # Mixed 7a (Reduction-B block): 8 x 8 x 2080
-    C4 = KL.ZeroPadding2D(((1, 1)))(x)
-    branch_0 = conv2d_bn(x, 256, 1)
-    branch_0 = conv2d_bn(branch_0, 384, 3, strides=2, padding='valid')
-    branch_1 = conv2d_bn(x, 256, 1)
-    branch_1 = conv2d_bn(branch_1, 288, 3, strides=2, padding='valid')
-    branch_2 = conv2d_bn(x, 256, 1)
-    branch_2 = conv2d_bn(branch_2, 288, 3)
-    branch_2 = conv2d_bn(branch_2, 320, 3, strides=2, padding='valid')
-    branch_pool = KL.MaxPooling2D(3, strides=2, padding='valid')(x)
+    C4 = KL.ZeroPadding2D(((1, 1)), name="zp03")(x)
+    branch_0 = conv2d_bn(x, 256, 1, name="c17")
+    branch_0 = conv2d_bn(branch_0, 384, 3, strides=2, padding='valid', name="c18")
+    branch_1 = conv2d_bn(x, 256, 1, name="c19")
+    branch_1 = conv2d_bn(branch_1, 288, 3, strides=2, padding='valid', name="c20")
+    branch_2 = conv2d_bn(x, 256, 1, name="c21")
+    branch_2 = conv2d_bn(branch_2, 288, 3, name="c22")
+    branch_2 = conv2d_bn(branch_2, 320, 3, strides=2, padding='valid', name="c23")
+    branch_pool = KL.MaxPooling2D(3, strides=2, padding='valid', name="mp04")(x)
     branches = [branch_0, branch_1, branch_2, branch_pool]
     x = KL.Concatenate(axis=channel_axis, name='mixed_7a')(branches)
 
@@ -490,7 +490,7 @@ def inc_resnet_graph(input_image, architecture, stage5=False, train_bn=True):
 
     # Final convolution block: 8 x 8 x 1536
     x = conv2d_bn(x, 1536, 1, name='conv_7b')
-    C5 = KL.ZeroPadding2D(((1, 1)))(x)
+    C5 = KL.ZeroPadding2D(((1, 1)), name="zp04")(x)
     return [C1, C2, C3, C4, C5]
 
 
@@ -2245,15 +2245,15 @@ class MaskRCNN():
         # Bottom-up Layers
         # Returns a list of the last layers of each stage, 5 in total.
         # Don't create the thead (stage 5), so we pick the 4th item in the list.
-        if callable(config.BACKBONE):
-            _, C2, C3, C4, C5 = config.BACKBONE(input_image, stage5=True,
-                                                train_bn=config.TRAIN_BN)
-        else:
-            _, C2, C3, C4, C5 = resnet_graph(input_image, config.BACKBONE,
+        # if callable(config.BACKBONE):
+        #     _, C2, C3, C4, C5 = config.BACKBONE(input_image, stage5=True,
+        #                                         train_bn=config.TRAIN_BN)
+        # else:
+        #     _, C2, C3, C4, C5 = resnet_graph(input_image, config.BACKBONE,
+        #                                      stage5=True, train_bn=config.TRAIN_BN)
+
+        _, C2, C3, C4, C5 = inc_resnet_graph(input_image, config.BACKBONE,
                                              stage5=True, train_bn=config.TRAIN_BN)
-        #
-        # _, C2, C3, C4, C5 = inc_resnet_graph(input_image, config.BACKBONE,
-        #                                  stage5=True, train_bn=config.TRAIN_BN)
         # Top-down Layers
         # TODO: add assert to varify feature map sizes match what's in config
         P5 = KL.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (1, 1), name='fpn_c5p5')(C5)
@@ -2311,7 +2311,7 @@ class MaskRCNN():
                                                         config.IMAGE_MAX_DIM,
                                                         train_bn=config.TRAIN_BN,
                                                         num_points=config.NUM_POINTS)
-            print(mrcnn_keypoints, "mrcnn_keypoints")
+            # print(mrcnn_keypoints, "mrcnn_keypoints")
 
             model = KM.Model([input_image, input_image_meta],
                              [mrcnn_keypoints, mrcnn_uncertainty],

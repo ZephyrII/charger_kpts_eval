@@ -40,7 +40,7 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 10000
+    STEPS_PER_EPOCH = 5000
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.0001
     NUM_POINTS = 4
@@ -145,7 +145,7 @@ class ChargerDataset(utils.Dataset):
                 # kp_maps[i, int(float(kp.find('y').text)*h), int(float(kp.find('x').text)*w)] = 1.0
                 # kp_maps[i, point_center[0] - point_size:point_center[0] + point_size,
                 # point_center[1] - point_size:point_center[1] + point_size] = 255
-                cv2.circle(kp_maps[i], point_center, point_size, 255, -1)
+                cv2.circle(kp_maps[i], point_center[::-1], point_size, 255, -1)
                 # kp_maps[i, point_center[0], point_center[1]] = 255
                 # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (5,5), sigmaX=2)
                 # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (3,3), sigmaX=0)
@@ -262,8 +262,8 @@ if __name__ == '__main__':
         weights_path = model.find_last()
     elif args.weights.lower() == "imagenet":
         # Start from ImageNet trained weights
-        weights_path = model.get_imagenet_weights()
-        # weights_path = model.get_imagenet_inc_res_weights()
+        # weights_path = model.get_imagenet_weights()
+        weights_path = model.get_imagenet_inc_res_weights()
     else:
         weights_path = args.weights
 
