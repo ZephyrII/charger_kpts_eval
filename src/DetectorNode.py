@@ -282,7 +282,13 @@ class DetectorNode:
         else:
             self.posePublisher_front.publish(out_msg)
 
+
     def publish_keyponts(self, stamp):
+        out_msg = KeypointsWithCovarianceStamped()
+        out_msg.header.stamp = stamp
+        out_msg.header.frame_id = "camera"
+
+
         def calc_dist(x, z):
             # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
             return abs(x[0] - z[0]), abs(x[1] - z[1])
@@ -294,7 +300,13 @@ class DetectorNode:
                 print("Fails ratio", self.failed_detections / self.frames_sent_to_detector * 100)
                 return
             single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
+            out_msg.keypoints.append(kp[0])
+            out_msg.keypoints.append(kp[1])
+            for unc in np.reshape(self.uncertainty[idx], (-1)):
+                out_msg.covariance.append(unc)
         self.prediction_errors.append(np.array(single_img_pred).reshape((8, 1)))
+
+        self.keypointsPublisher.publish(out_msg)
 
 
 if __name__ == '__main__':
