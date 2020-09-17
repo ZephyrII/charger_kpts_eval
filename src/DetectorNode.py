@@ -22,8 +22,8 @@ import time
 
 # import math
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 class DetectorNode:
     def __init__(self):
@@ -42,7 +42,7 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model_front = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model_front = "/root/share/tf/Keras/15_09_heatmap_corners_incV2"
+        path_to_model_front = "/root/share/tf/Keras/7_09_heatmap_unc"
         # path_to_model_front = "/root/share/tf/Keras/22_07_residual_kp_big_head"
         # path_to_model_front = "/root/share/tf/Keras/3_07_PP_5_separate_uncertainty_UGLLI_loss"
         path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
@@ -239,11 +239,12 @@ class DetectorNode:
         self.frames_sent_to_detector += 1
         if self.detector.best_detection is not None:
             self.keypoints = self.detector.best_detection['keypoints']
-            self.uncertainty = self.detector.best_detection['uncertainty']
-            print("unc", self.uncertainty)
+            # self.uncertainty = self.detector.best_detection['uncertainty']
+            self.uncertainty = self.detector.best_detection['heatmap_uncertainty']
+            # print("unc", self.uncertainty)
             for i, pt in enumerate(self.keypoints):
                 sigma = self.uncertainty[i]
-                print("sigma:", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
+                # print("sigma:", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
                 # gt_kp = self.gt_keypoints[i]
                 cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, (0, 0, 255), -1)
                 cv2.ellipse(disp, (int(pt[0]), int(pt[1])), (int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1]))),
@@ -258,11 +259,11 @@ class DetectorNode:
                 camera_matrix = self.blackfly_camera_matrix
             # if self.detector.best_detection['score'] > 0.5:
             # self.keypoints = np.multiply(self.keypoints, 1 / self.detector.scale)
-            # self.publish_keyponts(stamp)
+            self.publish_keyponts(stamp)
             self.publish_pose(stamp, camera_matrix)
             # self.detector.scale = 1.0
             self.blackfly_image = None
-            print("detection time:", time.time() - start_time)
+            # print("detection time:", time.time() - start_time)
 
     def publish_pose(self, stamp, camera_matrix):
         tvec, rvec = self.pose_estimator.calc_PnP_pose(self.keypoints, camera_matrix)
@@ -286,25 +287,28 @@ class DetectorNode:
     def publish_keyponts(self, stamp):
         out_msg = KeypointsWithCovarianceStamped()
         out_msg.header.stamp = stamp
-        out_msg.header.frame_id = "camera"
+        out_msg.keypoints = []
+        out_msg.covariance = []
+
+        # out_msg.header.frame_id = "camera"
 
 
         def calc_dist(x, z):
             # return math.sqrt((x[0]-z[0]) ** 2 + (x[1]-z[1]) ** 2)
             return abs(x[0] - z[0]), abs(x[1] - z[1])
 
-        single_img_pred = []
+        # single_img_pred = []
         for idx, kp in enumerate(self.keypoints):
-            if calc_dist(kp, self.gt_keypoints[idx])[1] > 50:
-                self.failed_detections += 1
-                print("Fails ratio", self.failed_detections / self.frames_sent_to_detector * 100)
-                return
-            single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
+            # if calc_dist(kp, self.gt_keypoints[idx])[1] > 50:
+            #     self.failed_detections += 1
+            #     print("Fails ratio", self.failed_detections / self.frames_sent_to_detector * 100)
+            #     return
+            # single_img_pred.append(calc_dist(kp, self.gt_keypoints[idx]))
             out_msg.keypoints.append(kp[0])
             out_msg.keypoints.append(kp[1])
             for unc in np.reshape(self.uncertainty[idx], (-1)):
                 out_msg.covariance.append(unc)
-        self.prediction_errors.append(np.array(single_img_pred).reshape((8, 1)))
+        # self.prediction_errors.append(np.array(single_img_pred).reshape((8, 1)))
 
         self.keypointsPublisher.publish(out_msg)
 

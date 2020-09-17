@@ -301,14 +301,12 @@ class PoseEstimator:
         # print("imagePoints", lol.astype(np.int16).flatten())
         if imagePoints is None and len(imagePoints) > 0:
             return None
-        if len(imagePoints) == 8:
-            PnP_image_points = [imagePoints[0], imagePoints[1], imagePoints[2], imagePoints[3], imagePoints[5],
-                                imagePoints[6]]
-            # object_points = np.array([(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(np.float64)
+
+        if len(imagePoints) == 4:  # squares
+            PnP_image_points = imagePoints
             object_points = np.array(
-                [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
-                 # ]).astype(np.float64)
-                 (2.80, -0.91, -0.1), (-0.1, -0.755, -0.1)]).astype(np.float64)
+                [(0.0145, -0.1796, -0.6472), (2.7137, 0.7782, -0.0808), (2.3398, -0.5353, -0.0608),
+                 (0.2374, -0.5498, -0.0778)]).astype(np.float64)
         elif len(imagePoints) == 7:
             PnP_image_points = imagePoints
             object_points = np.array(
@@ -321,10 +319,10 @@ class PoseEstimator:
                  (2.775, 0.72, -0.1)]).astype(np.float64)
             # [(-0.65, -0.32, 0.0), (-0.65, 0.32, 0.0), (-0.1, 2.8, -0.92), (-0.09, -0.1, -0.765),
             #      (-0.1, 2.775, 0.72)]).astype(np.float64)
-        elif len(imagePoints) == 4:
-            PnP_image_points = imagePoints
-            object_points = np.array(
-                [(-0.385, 0, -0.65), (0.385, 0, -0.65), (0.385, 0, 0.65), (-0.385, 0, 0.65)]).astype(np.float64)
+        # elif len(imagePoints) == 4:
+        #     PnP_image_points = imagePoints
+        #     object_points = np.array(
+        #         [(-0.385, 0, -0.65), (0.385, 0, -0.65), (0.385, 0, 0.65), (-0.385, 0, 0.65)]).astype(np.float64)
         PnP_image_points = np.array(PnP_image_points).astype(np.float64)
 
         retval, rvec, tvec = cv2.solvePnP(object_points, PnP_image_points, camera_matrix,
@@ -337,7 +335,7 @@ class PoseEstimator:
         rot = Rotation.from_rotvec(rvec)
         # tvec = -tvec
         print('TVEC', tvec)
-        print('RVEC', rvec, rot.as_euler('xyz') * 180 / 3.14)
+        # print('RVEC', rvec, rot.as_euler('xyz') * 180 / 3.14)
         self.PnP_pose_data = tvec
         self.last_tvec = tvec
         self.last_rvec = rvec
