@@ -31,7 +31,7 @@ class PoseEstimator:
         self.PnP_dist = None
         self.GPS_dist = None
         self.posecnn_dist = None
-        self.last_tvec = np.array([0.0, 0.0, 40.0])
+        self.last_tvec = np.array([0.0, 0.0, 45.0])
         self.last_rvec = np.array([0.0, 0.0, 0.0])
         lastR = Rotation.from_euler('xyz', [np.deg2rad(-16), 0, 0])
         self.last_rvec = lastR.as_rotvec()
@@ -327,6 +327,7 @@ class PoseEstimator:
 
         retval, rvec, tvec = cv2.solvePnP(object_points, PnP_image_points, camera_matrix,
                                           distCoeffs=None,
+                                          # flags=cv2.SOLVEPNP_ITERATIVE,
                                           tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_ITERATIVE,
                                           useExtrinsicGuess=True)
         # tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_EPNP)

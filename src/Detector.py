@@ -98,7 +98,7 @@ class Detector:
 
     def init_size(self, shape):
         self.frame_shape = shape
-        self.moving_avg_image = np.full((self.config.NUM_POINTS, shape[0], shape[1]), 0.5, dtype=np.float64)
+        self.moving_avg_image = np.full((self.config.NUM_POINTS, shape[0], shape[1]), 0.0, dtype=np.float64)
 
     def get_CNN_output(self, image_np):  # TODO: scale keypoints
         start_time = time.time()
@@ -120,14 +120,17 @@ class Detector:
             xmin, ymin, xmax, ymax = self.bbox
             alpha = 0.8
             # print("dtypes", kp.astype(np.float64).shape, self.moving_avg_image[i, ymin:ymax, xmin:xmax].shape)
-            # kp = cv2.addWeighted(kp.astype(np.float64), alpha,
-            #                      cv2.resize(self.moving_avg_image[i, ymin:ymax, xmin:xmax], self.slice_size), 1-alpha, 0.0)
+            kp = cv2.addWeighted(kp.astype(np.float64), alpha,
+                                 cv2.resize(self.moving_avg_image[i, ymin:ymax, xmin:xmax], self.slice_size), 1 - alpha,
+                                 0.0)
             kp = kp / np.max(kp)
             # cv2.imshow("kp", kp)
             # cv2.waitKey(0)
             h, w = kp.shape
-            # ret, kp = cv2.threshold(kp, 0.85, 1.0, cv2.THRESH_BINARY)
-            ret, kp = cv2.threshold(kp, 0.2, 1.0, cv2.THRESH_BINARY)
+            ret, kp = cv2.threshold(kp, 0.5, 1.0, cv2.THRESH_BINARY)
+            # ret, kp = cv2.threshold(kp, 0.2, 1.0, cv2.THRESH_BINARY)
+            # cv2.imshow("kp", kp)
+            # cv2.waitKey(0)
             X = np.argwhere(kp == 1)
             if X.shape[0] == 0:
                 absolute_kp.append((0, 0))
@@ -144,7 +147,7 @@ class Detector:
             mask = np.zeros_like(kp)
             mask[cluster[:, 0], cluster[:, 1]] = 1.0
 
-            # self.update_moving_avg(i, mask)
+            self.update_moving_avg(i, mask)
             heatmap_uncertainty.append(np.cov(cluster.T))
             if np.sum(mask) == 0:
                 center = (0, 0)
@@ -164,10 +167,14 @@ class Detector:
         overlay = np.zeros(self.frame_shape, dtype=np.float64)
         mk = cv2.resize(mask, (xmax - xmin, ymax - ymin))
         ret, mk = cv2.threshold(mk, 0.5, 1.0, cv2.THRESH_BINARY)
-        mk = cv2.dilate(mk, np.ones((10, 10), np.uint8), iterations=10)
-        mk = cv2.blur(mk, (20, 20))
-        overlay[ymin:ymax, xmin:xmax] = cv2.resize(mk, (xmax - xmin, ymax - ymin))
+        mk = cv2.dilate(mk, np.ones((10, 10), np.uint8), iterations=15)
+        mk = cv2.blur(mk, (50, 50))
+        try:
+            overlay[ymin:ymax, xmin:xmax] = cv2.resize(mk, (xmax - xmin, ymax - ymin))
+        except ValueError:
+            print("error", xmin, ymin, xmax, ymax, overlay.shape)
         cv2.accumulateWeighted(overlay, self.moving_avg_image[i], 0.5)
+        # cv2.imshow("ma", cv2.resize(self.moving_avg_image[i], (960, 960)))
 
     def detect(self, frame, gt_pose, gt_kp):
         self.gt_kp = gt_kp
@@ -203,7 +210,7 @@ class Detector:
 
         xmin -= int(6 * margin[0])
         ymin -= int(margin[1])
-        xmax += int(margin[0])
+        xmax += int(6 * margin[0])
         ymax += int(margin[1])
         self.scale = ((xmax - xmin) / self.slice_size[0], (ymax - ymin) / self.slice_size[1])
         self.bbox = [xmin, ymin, xmax, ymax]
@@ -212,7 +219,7 @@ class Detector:
             frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
             cv2.imshow("yolo", frame)
         except cv2.error as e:
-            print(e.msg)
+            # print(e.msg)
             return
 
         # xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
