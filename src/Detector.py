@@ -56,7 +56,7 @@ class Detector:
         self.gt_kp = None
         self.gt_pose = None
 
-        self.yolo = YOLO()
+        self.yolo = YOLO(model_path=path_to_pole_model)
 
         self.pole_detection_graph = tf.Graph()
         with self.pole_detection_graph.as_default():

@@ -22,8 +22,8 @@ import time
 
 # import math
 
-# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-# os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 class DetectorNode:
     def __init__(self):
@@ -42,10 +42,11 @@ class DetectorNode:
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model_front = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model_front = "/root/share/tf/Keras/2_09_heatmap_unc"
+        path_to_model_front = "/root/share/tf/Keras/19_09_heatmap_unc"
         # path_to_model_front = "/root/share/tf/Keras/22_07_residual_kp_big_head"
         # path_to_model_front = "/root/share/tf/Keras/3_07_PP_5_separate_uncertainty_UGLLI_loss"
-        path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
+        # path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
+        path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '18_09trained_weights_final.h5')
         self.equalize_histogram = False
         self.blackfly_camera_matrix = np.array([[4885.3110509, 0, 2685.5111516],
                                                 [0, 4894.72687634, 2024.08742622],

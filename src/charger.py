@@ -40,7 +40,7 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 5000
+    STEPS_PER_EPOCH = 10000
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.0001
     NUM_POINTS = 4
@@ -133,10 +133,10 @@ class ChargerDataset(utils.Dataset):
         for object in root.findall('object'):
             kps = object.find('keypoints')
             for i in range(num_points):  # TODO: remove
-                if i >= 2:
-                    kp = kps.find('keypoint' + str(i + 1))
-                else:
-                    kp = kps.find('keypoint' + str(i))
+                # if i >= 2:
+                #     kp = kps.find('keypoint' + str(i + 1))
+                # else:
+                kp = kps.find('keypoint' + str(i))
                 point_size = 10
                 point_center = (
                 int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)),
