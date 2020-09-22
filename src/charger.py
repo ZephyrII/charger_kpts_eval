@@ -42,7 +42,7 @@ class chargerConfig(Config):
     NUM_CLASSES = 1 + 1  # Background + charger
     STEPS_PER_EPOCH = 10000
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.0001
+    LEARNING_RATE = 0.00005
     NUM_POINTS = 4
 
 ############################################################
@@ -216,7 +216,7 @@ def train(model):
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
                 epochs=300,
-                layers='5+')
+                layers='uncertainty')
 
 
 ############################################################

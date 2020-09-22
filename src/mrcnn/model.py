@@ -1566,13 +1566,13 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
     pred_kp_float = K.cast(pred_kp_float, dtype=tf.float32)
     sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)))  # , axes=(4, 3))
     sigma_loss = sigma
-    # inv_sigma = tf.linalg.inv(sigma)
-    # mahalanobis = K.batch_dot(K.expand_dims(target_kp - pred_kp_float, -2), inv_sigma)
-    # mahalanobis = K.batch_dot(mahalanobis, K.expand_dims(target_kp - pred_kp_float, -1))
+    inv_sigma = tf.linalg.inv(sigma)
+    mahalanobis = K.batch_dot(K.expand_dims(target_kp - pred_kp_float, -2), inv_sigma)
+    mahalanobis = K.batch_dot(mahalanobis, K.expand_dims(target_kp - pred_kp_float, -1))
 
     # inv_sigma = K.stack([K.stack([sigma[:, :, 1, 1] / det, -sigma[:, :, 0, 1] / det], axis=-1),
     #                  K.stack([-sigma[:, :, 1, 0] / det, sigma[:, :, 0, 0] / det], axis=-1)], axis=-1)
-    loss = K.mean(sigma_loss)  # +K.mean(mahalanobis)
+    loss = K.mean(sigma_loss) + K.mean(mahalanobis)
 
     return loss
 
@@ -2585,6 +2585,7 @@ class MaskRCNN():
             # all layers but the backbone
             "uncertainty": r"(mrcnn\_uncertainty.*)",
             "heads": r"(mrcnn\_.*)|(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
+            "not_uncertainty": r"(res5.*)|(bn5.*)|(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
             # From a specific Resnet stage and up
             "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",

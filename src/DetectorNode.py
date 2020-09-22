@@ -22,8 +22,8 @@ import time
 
 # import math
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 class DetectorNode:
     def __init__(self):
@@ -240,12 +240,12 @@ class DetectorNode:
         self.frames_sent_to_detector += 1
         if self.detector.best_detection is not None:
             self.keypoints = self.detector.best_detection['keypoints']
-            # self.uncertainty = self.detector.best_detection['uncertainty']
-            self.uncertainty = self.detector.best_detection['heatmap_uncertainty']
+            self.uncertainty = self.detector.best_detection['uncertainty']
+            # self.uncertainty = self.detector.best_detection['heatmap_uncertainty']
             # print("unc", self.uncertainty)
             for i, pt in enumerate(self.keypoints):
                 sigma = self.uncertainty[i]
-                # print("sigma:", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
+                print("sigma:", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
                 # gt_kp = self.gt_keypoints[i]
                 cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, (0, 0, 255), -1)
                 cv2.ellipse(disp, (int(pt[0]), int(pt[1])), (int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1]))),

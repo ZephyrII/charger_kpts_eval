@@ -116,7 +116,7 @@ class Detector:
 
         for i, kp in enumerate(kps):
             # center = np.unravel_index(kp.argmax(), kp.shape)
-
+            raw_kp = kp
             xmin, ymin, xmax, ymax = self.bbox
             alpha = 0.8
             # print("dtypes", kp.astype(np.float64).shape, self.moving_avg_image[i, ymin:ymax, xmin:xmax].shape)
@@ -127,8 +127,8 @@ class Detector:
             # cv2.imshow("kp", kp)
             # cv2.waitKey(0)
             h, w = kp.shape
-            ret, kp = cv2.threshold(kp, 0.5, 1.0, cv2.THRESH_BINARY)
-            # ret, kp = cv2.threshold(kp, 0.2, 1.0, cv2.THRESH_BINARY)
+            # ret, kp = cv2.threshold(kp, 0.5, 1.0, cv2.THRESH_BINARY)
+            ret, kp = cv2.threshold(kp, 0.2, 1.0, cv2.THRESH_BINARY)
             # cv2.imshow("kp", kp)
             # cv2.waitKey(0)
             X = np.argwhere(kp == 1)
@@ -145,10 +145,11 @@ class Detector:
                 cluster_scores.append(np.sum(kp[cluster[:, 0], cluster[:, 1]]))
             cluster = X[np.where(clustering.labels_ == unique_labels[np.argmax(cluster_scores)])]
             mask = np.zeros_like(kp)
-            mask[cluster[:, 0], cluster[:, 1]] = 1.0
+            mask[cluster[:, 0], cluster[:, 1]] = raw_kp[cluster[:, 0], cluster[:, 1]]
+            print("ss", cluster.T.shape, mask[mask != 0].reshape(-1).shape)
 
             self.update_moving_avg(i, mask)
-            heatmap_uncertainty.append(np.cov(cluster.T))
+            heatmap_uncertainty.append(np.cov(cluster.T, aweights=mask[mask != 0].reshape(-1)))
             if np.sum(mask) == 0:
                 center = (0, 0)
             else:
