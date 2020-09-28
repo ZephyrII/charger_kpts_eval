@@ -40,7 +40,7 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 10000
+    STEPS_PER_EPOCH = 15000
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.00005
     NUM_POINTS = 4
@@ -83,10 +83,10 @@ class ChargerDataset(utils.Dataset):
             for obj in root.findall('object'):
                 bndboxxml = obj.find('bndbox')
                 if bndboxxml is not None:
-                    xmin = int(float(bndboxxml.find('xmin').text) * w - self.increase_bbox_percent * w)
-                    ymin = int(float(bndboxxml.find('ymin').text) * h - self.increase_bbox_percent * h)
-                    xmax = int(float(bndboxxml.find('xmax').text) * w + self.increase_bbox_percent * w)
-                    ymax = int(float(bndboxxml.find('ymax').text) * h + self.increase_bbox_percent * h)
+                    xmin = max([int(float(bndboxxml.find('xmin').text) * w - self.increase_bbox_percent * w), 0])
+                    ymin = max([int(float(bndboxxml.find('ymin').text) * h - self.increase_bbox_percent * h), 0])
+                    xmax = min([int(float(bndboxxml.find('xmax').text) * w + self.increase_bbox_percent * w), w])
+                    ymax = min([int(float(bndboxxml.find('ymax').text) * h + self.increase_bbox_percent * h), h])
 
                     # return
 
@@ -113,6 +113,14 @@ class ChargerDataset(utils.Dataset):
         # If has an alpha channel, remove it for consistency
         if image.shape[-1] == 4:
             image = image[..., :3]
+        # if xmin<0:
+        #     xmin=0
+        # if ymin<0:
+        #     ymin=0
+        # if xmax>960:
+        #     xmax=960
+        # if ymax>960:
+        #     ymax=960
         image = image[ymin:ymax, xmin:xmax]
         image = cv2.resize(image, (self.image_info[image_id]['width'], self.image_info[image_id]['height']))
         return image

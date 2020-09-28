@@ -117,6 +117,11 @@ class Detector:
         for i, kp in enumerate(kps):
             # center = np.unravel_index(kp.argmax(), kp.shape)
             raw_kp = kp
+            background = kps
+            background = np.sum(np.delete(background, i, 0), axis=0)
+            # cv2.imshow("bg", background)
+            # cv2.waitKey(0)
+            kp = kp - background
             xmin, ymin, xmax, ymax = self.bbox
             alpha = 0.8
             # print("dtypes", kp.astype(np.float64).shape, self.moving_avg_image[i, ymin:ymax, xmin:xmax].shape)
@@ -146,10 +151,12 @@ class Detector:
             cluster = X[np.where(clustering.labels_ == unique_labels[np.argmax(cluster_scores)])]
             mask = np.zeros_like(kp)
             mask[cluster[:, 0], cluster[:, 1]] = raw_kp[cluster[:, 0], cluster[:, 1]]
-            print("ss", cluster.T.shape, mask[mask != 0].reshape(-1).shape)
 
             self.update_moving_avg(i, mask)
-            heatmap_uncertainty.append(np.cov(cluster.T, aweights=mask[mask != 0].reshape(-1)))
+            if mask[mask != 0].reshape(-1).shape == 0:
+                heatmap_uncertainty = np.full((2, 2), np.inf)
+            else:
+                heatmap_uncertainty.append(np.cov(cluster.T, aweights=mask[mask != 0].reshape(-1)))
             if np.sum(mask) == 0:
                 center = (0, 0)
             else:

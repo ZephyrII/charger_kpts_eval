@@ -191,7 +191,7 @@ class Config(object):
     # Loss weights for more precise optimization.
     # Can be used for R-CNN training setup.
     LOSS_WEIGHTS = {
-        "mrcnn_kp_loss": 1.,
+        "mrcnn_kp_loss": 0.,
         "mrcnn_uncertainty_loss": 1.
     }
 
