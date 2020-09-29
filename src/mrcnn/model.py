@@ -1565,20 +1565,24 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
     pred_kp = pred_kp / K.max(pred_kp, axis=(3, 4), keepdims=True)
     pred_kp *= K.cast(K.greater_equal(pred_kp, 0.8), tf.float32)
 
-    x = K.mean(K.sum(pred_kp, axis=4) * K.arange(0, stop=input_shape[0, 1]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
-        input_shape[..., 1]
-    y = K.mean(K.sum(pred_kp, axis=3) * K.arange(0, stop=input_shape[0, 0]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
+    x = K.mean(K.sum(pred_kp, axis=3) * K.arange(0, stop=input_shape[0, 0]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
         input_shape[..., 0]
+    y = K.mean(K.sum(pred_kp, axis=4) * K.arange(0, stop=input_shape[0, 1]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
+        input_shape[..., 1]
     pred_kp_float = K.stack([x, y], axis=-1)
     pred_kp_float = K.cast(pred_kp_float, dtype=tf.float32)
-    sigma = K.batch_dot(L, K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)))  # , axes=(4, 3))
-    sigma_loss = sigma
+    pred_kp_float = pred_kp_float[:, 0]
+    target_kp = target_kp[:, 0]
+    sigma = tf.matmul(K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)), L)  # , axes=(4, 3))
+    det = sigma[..., 0, 0] * sigma[..., 1, 1] - sigma[..., 0, 1] * sigma[..., 1, 0]
+    sigma_loss = K.log(det)
+    # inv_sigma = K.stack([K.stack([sigma[...,  1, 1] / det, -sigma[...,  0, 1] / det], axis=-1),
+    #                  K.stack([-sigma[...,  1, 0] / det, sigma[...,  0, 0] / det], axis=-1)], axis=-1)
     inv_sigma = tf.linalg.inv(sigma)
-    mahalanobis = K.batch_dot(K.expand_dims(target_kp - pred_kp_float, -2), inv_sigma)
-    mahalanobis = K.batch_dot(mahalanobis, K.expand_dims(target_kp - pred_kp_float, -1))
+    diff = target_kp - pred_kp_float
+    mahalanobis = tf.matmul(K.expand_dims(diff, -2), inv_sigma)
+    mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1))
 
-    # inv_sigma = K.stack([K.stack([sigma[:, :, 1, 1] / det, -sigma[:, :, 0, 1] / det], axis=-1),
-    #                  K.stack([-sigma[:, :, 1, 0] / det, sigma[:, :, 0, 0] / det], axis=-1)], axis=-1)
     loss = K.mean(sigma_loss) + K.mean(mahalanobis)
 
     return loss
@@ -2812,16 +2816,16 @@ class MaskRCNN():
         # Run object detection
         kp, L = self.keras_model.predict([molded_images, image_metas], verbose=0)
 
-        sigma = np.matmul(L, np.transpose(L, [0, 1, 2, 4, 3]))
+        sigma = np.matmul(np.transpose(L, [0, 1, 2, 4, 3]), L)
         # Process detections
 
-        results = []
-        for i, image in enumerate(images):
-            results.append({
-                "kp": kp,
-                "uncertainty": sigma
-            })
-        return results
+        # results = []
+        # for i, image in enumerate(images):
+        #     results.append({
+        #         "kp": kp,
+        #         "uncertainty": sigma
+        #     })
+        return {"kp": kp, "uncertainty": sigma}
 
     def detect_molded(self, molded_images, image_metas, verbose=0):
         """Runs the detection pipeline, but expect inputs that are

@@ -24,7 +24,7 @@ class YOLO(object):
         "model_path": '/root/share/tf/YOLO/02_09ep060-loss7.630-val_loss7.563.h5',
         "anchors_path": 'YOLO/model_data/yolo_anchors.txt',
         # "classes_path": 'model_data/charger_classes.txt',
-        "score": 0.3,
+        "score": 0.4,
         "iou": 0.45,
         "model_image_size": (960, 960),
         "gpu_num": 1,

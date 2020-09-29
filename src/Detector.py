@@ -103,11 +103,10 @@ class Detector:
     def get_CNN_output(self, image_np):  # TODO: scale keypoints
         start_time = time.time()
         if self.bottom:
-            r = self.det_model_bottom.detect([image_np], verbose=0)[0]
+            r = self.det_model_bottom.detect([image_np], verbose=0)
         else:
-            r = self.det_model.detect([image_np], verbose=0)[0]
+            r = self.det_model.detect([image_np], verbose=0)
         # print("kp detection time:", time.time() - start_time)
-
         uncertainty = r['uncertainty'][0][0]
         kps = r['kp'][0][0]
         kps = np.transpose(kps, (2, 0, 1))
@@ -155,8 +154,8 @@ class Detector:
             self.update_moving_avg(i, mask)
             if mask[mask != 0].reshape(-1).shape == 0:
                 heatmap_uncertainty = np.full((2, 2), np.inf)
-            else:
-                heatmap_uncertainty.append(np.cov(cluster.T, aweights=mask[mask != 0].reshape(-1)))
+            # else:
+            #     heatmap_uncertainty.append(np.cov(cluster.T, aweights=mask[mask != 0].reshape(-1)))
             if np.sum(mask) == 0:
                 center = (0, 0)
             else:

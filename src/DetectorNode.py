@@ -35,16 +35,14 @@ class DetectorNode:
                                                   queue_size=1)
         self.blackfly_topic = '/blackfly/camera/image_color/compressed'
         self.pointgrey_topic = '/pointgrey/camera/image_color/compressed'
-        # self.camera_topic = '/video_player/compressed'q
+        # self.camera_topic = '/video_player/compressed'
         self.imu_topic = '/xsens/data'
         self.gt_pose_topic = '/pose_estimator/charger_pose/location_gps'
         rospy.init_node('deep_pose_estimator', log_level=rospy.DEBUG)
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
-        # path_to_model_front = "/root/share/tf/Keras/4_06_PP_5"
-        path_to_model_front = "/root/share/tf/Keras/22_09_heatmap_unc"
-        # path_to_model_front = "/root/share/tf/Keras/22_07_residual_kp_big_head"
-        # path_to_model_front = "/root/share/tf/Keras/3_07_PP_5_separate_uncertainty_UGLLI_loss"
+        # path_to_model_front = "/root/share/tf/Keras/22_09_heatmap_unc"
+        path_to_model_front = "/root/share/tf/Keras/28_09_heatmap_unc"
         # path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
         path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '18_09trained_weights_final.h5')
         self.equalize_histogram = False
@@ -245,8 +243,8 @@ class DetectorNode:
             # print("unc", self.uncertainty)
             for i, pt in enumerate(self.keypoints):
                 sigma = self.uncertainty[i]
-                # print("sqrt_sigma:", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
-                # print("sigma:", sigma)
+                print("sqrt_sigma:", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
+                print("sigma:", sigma)
                 # gt_kp = self.gt_keypoints[i]
                 cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, (0, 0, 255), -1)
                 cv2.ellipse(disp, (int(pt[0]), int(pt[1])), (int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1]))),
