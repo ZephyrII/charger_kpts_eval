@@ -120,13 +120,13 @@ class Detector:
             background = np.sum(np.delete(background, i, 0), axis=0)
             # cv2.imshow("bg", background)
             # cv2.waitKey(0)
-            kp = kp - background
+            # kp = kp - background
             xmin, ymin, xmax, ymax = self.bbox
             alpha = 0.8
             # print("dtypes", kp.astype(np.float64).shape, self.moving_avg_image[i, ymin:ymax, xmin:xmax].shape)
-            kp = cv2.addWeighted(kp.astype(np.float64), alpha,
-                                 cv2.resize(self.moving_avg_image[i, ymin:ymax, xmin:xmax], self.slice_size), 1 - alpha,
-                                 0.0)
+            # kp = cv2.addWeighted(kp.astype(np.float64), alpha,
+            #                      cv2.resize(self.moving_avg_image[i, ymin:ymax, xmin:xmax], self.slice_size), 1 - alpha,
+            #                      0.0)
             kp = kp / np.max(kp)
             # cv2.imshow("kp", kp)
             # cv2.waitKey(0)
@@ -151,7 +151,7 @@ class Detector:
             mask = np.zeros_like(kp)
             mask[cluster[:, 0], cluster[:, 1]] = raw_kp[cluster[:, 0], cluster[:, 1]]
 
-            self.update_moving_avg(i, mask)
+            # self.update_moving_avg(i, mask)
             if mask[mask != 0].reshape(-1).shape == 0:
                 heatmap_uncertainty = np.full((2, 2), np.inf)
             # else:

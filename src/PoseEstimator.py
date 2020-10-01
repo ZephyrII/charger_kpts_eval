@@ -333,9 +333,12 @@ class PoseEstimator:
         # tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_EPNP)
         # retval, rvec, tvec, inliers = cv2.solvePnPRansac(object_points, PnP_image_points, self.camera_matrix,
         #                                                  distCoeffs=(-0.11286,   0.11138,   0.00195,   -0.00166))
+
+        from scipy.spatial.transform import Rotation
         rot = Rotation.from_rotvec(rvec)
+        rot.as_euler('xyz')
         # tvec = -tvec
-        print('TVEC', tvec)
+        # print('TVEC', tvec)
         # print('RVEC', rvec, rot.as_euler('xyz') * 180 / 3.14)
         self.PnP_pose_data = tvec
         self.last_tvec = tvec

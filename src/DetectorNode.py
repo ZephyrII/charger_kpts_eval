@@ -22,8 +22,8 @@ import time
 
 # import math
 
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 class DetectorNode:
     def __init__(self):
@@ -43,6 +43,7 @@ class DetectorNode:
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
         # path_to_model_front = "/root/share/tf/Keras/22_09_heatmap_unc"
         path_to_model_front = "/root/share/tf/Keras/28_09_heatmap_unc"
+        # path_to_model_front = "/root/share/tf/Keras/thing"
         # path_to_pole_model = os.path.join("/root/share/tf/Faster/pole/model_Inea_3", 'frozen_inference_graph.pb')
         path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '18_09trained_weights_final.h5')
         self.equalize_histogram = False
@@ -240,17 +241,19 @@ class DetectorNode:
             self.keypoints = self.detector.best_detection['keypoints']
             self.uncertainty = self.detector.best_detection['uncertainty']
             # self.uncertainty = self.detector.best_detection['heatmap_uncertainty']
-            # print("unc", self.uncertainty)
+            print(self.keypoints)
+            # print(np.sqrt(self.uncertainty[..., 0, 0]), np.sqrt(self.uncertainty[..., 1, 1]))
             for i, pt in enumerate(self.keypoints):
                 sigma = self.uncertainty[i]
-                print("sqrt_sigma:", int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1])))
-                print("sigma:", sigma)
+                # print(np.sqrt(sigma[0, 0]), np.sqrt(sigma[1, 1]))
+                # print("sigma:", sigma)
                 # gt_kp = self.gt_keypoints[i]
                 cv2.circle(disp, (int(pt[0]), int(pt[1])), 10, (0, 0, 255), -1)
                 cv2.ellipse(disp, (int(pt[0]), int(pt[1])), (int(np.sqrt(sigma[0, 0])), int(np.sqrt(sigma[1, 1]))),
                             angle=0, startAngle=0, endAngle=360, color=(0, 255, 255), thickness=3)
                 # cv2.circle(disp, gt_kp, 5, (255, 0, 255), -1)
-            cv2.imshow("detection", cv2.resize(disp, self.detector.slice_size))
+            cv2.circle(disp, (3525, 2374), 5, (0, 255, 0), -1)
+            cv2.imshow("detection", disp)  # cv2.resize(disp, self.detector.slice_size*2))
             # cv2.waitKey(0)
             self.detected_frames += 1
             if self.detector.bottom:
