@@ -42,7 +42,7 @@ class chargerConfig(Config):
     NUM_CLASSES = 1 + 1  # Background + charger
     STEPS_PER_EPOCH = 10000
     DETECTION_MIN_CONFIDENCE = 0.9
-    LEARNING_RATE = 0.00001
+    LEARNING_RATE = 0.0001
     NUM_POINTS = 4
 
 ############################################################
@@ -53,7 +53,7 @@ class ChargerDataset(utils.Dataset):
 
     def __init__(self, class_map=None):
         super().__init__(class_map=class_map)
-        self.increase_bbox_percent = 0.01
+        self.increase_bbox_percent = 0.05
 
     def load_charger(self, dataset_dir, subset):
         """Load a subset of the charger dataset.
@@ -66,11 +66,30 @@ class ChargerDataset(utils.Dataset):
         # Train or validation dataset?
         assert subset in ["train", "val"]
         if subset == "val":
+            # pass
             dataset_dir = os.path.join(dataset_dir, 'val')
         annotations = os.listdir(os.path.join(dataset_dir, 'annotations'))
 
         # Add images
         for a in annotations:
+
+            # info = self.image_info[image_id]
+            # ann_fname = info['annotation']
+            tree = ET.parse(os.path.join(dataset_dir, 'annotations', a))
+            root = tree.getroot()
+            size = root.find('size')
+            w = int(size.find('width').text)
+            h = int(size.find('height').text)
+            for obj in root.findall('object'):
+                bndboxxml = obj.find('bndbox')
+                if bndboxxml is not None:
+                    xmin = max([int(float(bndboxxml.find('xmin').text) * w - self.increase_bbox_percent * w), 0])
+                    ymin = max([int(float(bndboxxml.find('ymin').text) * h - self.increase_bbox_percent * h), 0])
+                    xmax = min([int(float(bndboxxml.find('xmax').text) * w + self.increase_bbox_percent * w), w])
+                    ymax = min([int(float(bndboxxml.find('ymax').text) * h + self.increase_bbox_percent * h), h])
+
+                    # return
+
             image_path = os.path.join(dataset_dir, 'images', a[:-4]+'.png')
             image = skimage.io.imread(image_path)
             height, width = image.shape[:2]
@@ -81,26 +100,34 @@ class ChargerDataset(utils.Dataset):
                 path=image_path,
                 width=width, height=height,
                 mask=os.path.join(dataset_dir, 'labels', a[:-4]+'_label.png'),
-                annotation=os.path.join(dataset_dir, 'annotations', a))
+                annotation=os.path.join(dataset_dir, 'annotations', a),
+                bbox=np.array([xmin, ymin, xmax, ymax]))
 
-    def load_mask(self, image_id):
-        """Generate instance masks for an image.
-       Returns:
-        masks: A bool array of shape [height, width, instance count] with
-            one mask per instance.
-        class_ids: a 1D array of class IDs of the instance masks.
-        """
-        # If not a charger dataset image, delegate to parent class.
-        image_info = self.image_info[image_id]
-        if image_info["source"] != "charger":
-            return super(self.__class__, self).load_mask(image_id)
-
-        info = self.image_info[image_id]
-        mask = cv2.imread(info['mask'])
-        return mask.astype(np.bool), np.ones([mask.shape[-1]], dtype=np.int32)
+    def load_image(self, image_id):
+        image = cv2.imread(self.image_info[image_id]['path'])
+        xmin, ymin, xmax, ymax = self.image_info[image_id]['bbox']
+        # If grayscale. Convert to RGB for consistency.
+        if image.ndim != 3:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+            # image = skimage.color.gray2rgb(image)
+        # If has an alpha channel, remove it for consistency
+        if image.shape[-1] == 4:
+            image = image[..., :3]
+        # if xmin<0:
+        #     xmin=0
+        # if ymin<0:
+        #     ymin=0
+        # if xmax>960:
+        #     xmax=960
+        # if ymax>960:
+        #     ymax=960
+        image = image[ymin:ymax, xmin:xmax]
+        image = cv2.resize(image, (self.image_info[image_id]['width'], self.image_info[image_id]['height']))
+        return image
 
     def load_kp(self, image_id, num_points):
 
+        xmin, ymin, xmax, ymax = self.image_info[image_id]['bbox']
         info = self.image_info[image_id]
         # print(image_id)
         ann_fname = info['annotation']
@@ -110,45 +137,36 @@ class ChargerDataset(utils.Dataset):
         size = root.find('size')
         w = int(size.find('width').text)
         h = int(size.find('height').text)
+        kp_maps = np.zeros((num_points, w, h), dtype=np.int32)
         for object in root.findall('object'):
             kps = object.find('keypoints')
-            bbox = object.find('bndbox')
-            # xmin = float(bbox.find('xmin').text)
-            # ymin = float(bbox.find('ymin').text)
-            # xmax = float(bbox.find('xmax').text)
-            # ymax = float(bbox.find('ymax').text)
-            xmin = float(bbox.find('xmin').text) - self.increase_bbox_percent
-            ymin = float(bbox.find('ymin').text) - self.increase_bbox_percent
-            xmax = float(bbox.find('xmax').text) + self.increase_bbox_percent
-            ymax = float(bbox.find('ymax').text) + self.increase_bbox_percent
-            bw = (xmax - xmin) * w
-            bh = (ymax - ymin) * h
-            for i in range(num_points):
+            for i in range(num_points):  # TODO: remove
+                # if i >= 2:
+                #     kp = kps.find('keypoint' + str(i + 1))
+                # else:
                 kp = kps.find('keypoint' + str(i))
-                keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-                                  (float(kp.find('y').text) - ymin) * h / bh))
-            # try:  # 5_points
-            #     kps.find('keypoint6').text
-            #     for i in range(num_points + 2):
-            #         if i == 1 or i == 2:
-            #             continue
-            #         kp = kps.find('keypoint' + str(i))
-            #         keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-            #                           (float(kp.find('y').text) - ymin) * h / bh))
-            # except:
-            #     for i in range(num_points):
-            #         if i == 2:
-            #             continue
-            #         kp = kps.find('keypoint' + str(i))
-            #         keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-            #                           (float(kp.find('y').text) - ymin) * h / bh))
+                point_size = 5
+                point_center = (
+                    int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)),
+                    int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)))
+                keypoints.append(point_center)
+                # kp_maps[i, int(float(kp.find('y').text)*h), int(float(kp.find('x').text)*w)] = 1.0
+                # kp_maps[i, point_center[0] - point_size:point_center[0] + point_size,
+                # point_center[1] - point_size:point_center[1] + point_size] = 255
+                cv2.circle(kp_maps[i], point_center, point_size, 255, -1)
+                # kp_maps[i, point_center[0], point_center[1]] = 255
+                # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (5,5), sigmaX=2)
+                # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (3,3), sigmaX=0)
+                # image = self.load_image(image_id).astype(np.float32)/255
+                # kap = kp_maps[i].astype(np.float32)/255
+                # kap = cv2.cvtColor(kap, cv2.COLOR_GRAY2BGR)
+                # print("shapes", image.shape, kap.shape)
+                # alpha=0.8
+                # out = cv2.addWeighted(image, alpha, kap, 1-alpha, 0.0)
+                # cv2.imshow('xddlol', out)
+                # cv2.waitKey(0)
 
-            # kp = kps.find('keypoint2')
-            # keypoints.append(((float(kp.find('x').text) - xmin) * w / bw,
-            #                   (float(kp.find('y').text) - ymin) * h / bh))
-        # print("KP", len(keypoints))
-
-        return keypoints
+        return kp_maps, keypoints
 
     def load_yaw(self, image_id):
 
@@ -206,7 +224,7 @@ def train(model):
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
                 epochs=300,
-                layers='not_uncertainty')
+                layers='not_uncertainty')  # uncomment mahalonobis in model
 
 
 ############################################################
@@ -252,8 +270,8 @@ if __name__ == '__main__':
         weights_path = model.find_last()
     elif args.weights.lower() == "imagenet":
         # Start from ImageNet trained weights
-        weights_path = model.get_imagenet_weights()
-        # weights_path = model.get_imagenet_inc_res_weights()
+        # weights_path = model.get_imagenet_weights()
+        weights_path = model.get_imagenet_inc_res_weights()
     else:
         weights_path = args.weights
 
@@ -266,6 +284,15 @@ if __name__ == '__main__':
             "mrcnn_class_logits", "mrcnn_bbox_fc",
             "mrcnn_bbox", "mrcnn_mask"])
     else:
+        exclude = [
+            "mrcnn_uncertainty_conv1", "mrcnn_uncertainty_bn1",
+            "mrcnn_uncertainty_conv2", "mrcnn_uncertainty_bn2",
+            "mrcnn_uncertainty_conv3", "mrcnn_uncertainty_bn3",
+            "mrcnn_uncertainty_conv4", "mrcnn_uncertainty_bn4",
+            "mrcnn_uncertainty_conv5", "mrcnn_uncertainty_bn5",
+            "mrcnn_uncertainty_conv6", "mrcnn_uncertainty_bn6",
+            "mrcnn_uncertainty_flat", "mrcnn_uncertainty"
+        ]
         model.load_weights(weights_path, by_name=True)
 
     train(model)

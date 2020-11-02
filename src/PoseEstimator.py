@@ -31,7 +31,7 @@ class PoseEstimator:
         self.PnP_dist = None
         self.GPS_dist = None
         self.posecnn_dist = None
-        self.last_tvec = np.array([0.0, 0.0, 40.0])
+        self.last_tvec = np.array([0.0, 0.0, 45.0])
         self.last_rvec = np.array([0.0, 0.0, 0.0])
         lastR = Rotation.from_euler('xyz', [np.deg2rad(-16), 0, 0])
         self.last_rvec = lastR.as_rotvec()
@@ -301,44 +301,52 @@ class PoseEstimator:
         # print("imagePoints", lol.astype(np.int16).flatten())
         if imagePoints is None and len(imagePoints) > 0:
             return None
-        if len(imagePoints) == 8:
-            PnP_image_points = [imagePoints[0], imagePoints[1], imagePoints[2], imagePoints[3], imagePoints[5],
-                                imagePoints[6]]
-            # object_points = np.array([(-0.32, 0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0, -0.65)]).astype(np.float64)
-            object_points = np.array(
-                [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
-                 # ]).astype(np.float64)
-                 (2.80, -0.91, -0.1), (-0.1, -0.755, -0.1)]).astype(np.float64)
-        elif len(imagePoints) == 7:
+
+        if len(imagePoints) == 4:  # squares
             PnP_image_points = imagePoints
             object_points = np.array(
-                [(-0.32, 0.0, -0.65), (-0.075, -0.255, -0.65), (0.075, -0.255, -0.65), (0.32, 0.0, -0.65),
-                 (2.80, -0.91, -0.1), (-0.1, -0.755, -0.1), (2.775, 0.72, -0.1)]).astype(np.float64)
+                [(0.0145, -0.1796, -0.6472), (2.7137, 0.7782, -0.0808), (2.3398, -0.5353, -0.0608),
+                 (0.2374, -0.5498, -0.0778)]).astype(np.float64)
+        elif len(imagePoints) == 9:
+            PnP_image_points = imagePoints
+            object_points = np.array([[0.0145, -0.1796, -0.6472], [2.7137, 0.7782, -0.0808], [2.3398, -0.5353, -0.0608],
+                                      [0.2374, -0.5498, -0.0778], [-0.3838, -0.0252, -0.6103],
+                                      [0.3739, -0.0185, -0.6131],
+                                      [2.7607, 0.7064, -0.1480], [2.8160, -0.9127, -0.1428],
+                                      [-0.1048, -0.7433, -0.0434]]).astype(np.float64)
         elif len(imagePoints) == 5:
             PnP_image_points = imagePoints
+            # object_points = np.array(
+            #     [(-0.32, 0.0, -0.65), (0.32, 0.0, -0.65), (2.775, 0.72, -0.1), (2.80, -0.92, -0.1), (-0.1, -0.765, -0.09)
+            #      ]).astype(np.float64)
             object_points = np.array(
-                [(-0.32, 0.0, -0.65), (0.32, 0.0, -0.65), (2.80, -0.92, -0.1), (-0.1, -0.765, -0.09),
-                 (2.775, 0.72, -0.1)]).astype(np.float64)
+                [[-0.3838, -0.0252, -0.6103], [0.3739, -0.0185, -0.6131], [2.7607, 0.7064, -0.1480],
+                 [2.8160, -0.9127, -0.1428], [-0.1048, -0.7433, -0.0434]]).astype(np.float64)  # meshlab
             # [(-0.65, -0.32, 0.0), (-0.65, 0.32, 0.0), (-0.1, 2.8, -0.92), (-0.09, -0.1, -0.765),
             #      (-0.1, 2.775, 0.72)]).astype(np.float64)
-        elif len(imagePoints) == 4:
-            PnP_image_points = imagePoints
-            object_points = np.array(
-                [(-0.385, 0, -0.65), (0.385, 0, -0.65), (0.385, 0, 0.65), (-0.385, 0, 0.65)]).astype(np.float64)
+        # elif len(imagePoints) == 4:
+        #     PnP_image_points = imagePoints
+        #     object_points = np.array(
+        #         [(-0.385, 0, -0.65), (0.385, 0, -0.65), (0.385, 0, 0.65), (-0.385, 0, 0.65)]).astype(np.float64)
         PnP_image_points = np.array(PnP_image_points).astype(np.float64)
 
         retval, rvec, tvec = cv2.solvePnP(object_points, PnP_image_points, camera_matrix,
                                           distCoeffs=None,
+                                          # flags=cv2.SOLVEPNP_ITERATIVE,
                                           tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_ITERATIVE,
                                           useExtrinsicGuess=True)
         # tvec=self.last_tvec, rvec=self.last_rvec, flags=cv2.SOLVEPNP_EPNP)
         # retval, rvec, tvec, inliers = cv2.solvePnPRansac(object_points, PnP_image_points, self.camera_matrix,
         #                                                  distCoeffs=(-0.11286,   0.11138,   0.00195,   -0.00166))
+
+        from scipy.spatial.transform import Rotation
         rot = Rotation.from_rotvec(rvec)
+        rot.as_euler('xyz')
         # tvec = -tvec
         print('TVEC', tvec)
         print('RVEC', rvec, rot.as_euler('xyz') * 180 / 3.14)
         self.PnP_pose_data = tvec
-        self.last_tvec = tvec
-        self.last_rvec = rvec
+        if tvec[2] < 50:
+            self.last_tvec = tvec
+            self.last_rvec = rvec
         return tvec, rvec

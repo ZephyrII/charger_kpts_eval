@@ -10,7 +10,7 @@ Written by Waleed Abdulla
 import sys
 import os
 import logging
-import math
+import cv2
 import random
 import numpy as np
 import tensorflow as tf
@@ -357,12 +357,17 @@ class Dataset(object):
         """
         # Load image
         image = skimage.io.imread(self.image_info[image_id]['path'])
+        # xmin, ymin, xmax, ymax = self.image_info[image_id]['bbox']
         # If grayscale. Convert to RGB for consistency.
         if image.ndim != 3:
             image = skimage.color.gray2rgb(image)
         # If has an alpha channel, remove it for consistency
         if image.shape[-1] == 4:
             image = image[..., :3]
+        # image = image[ymin:ymax, xmin:xmax]
+        # image = cv2.resize(image, (self.image_info[image_id]['width'], self.image_info[image_id]['height']))
+        # cv2.imshow("xdd", image)
+        # cv2.waitKey(0)
         return image
 
     def load_mask(self, image_id):
