@@ -47,7 +47,7 @@ class Config(object):
     # Number of validation steps to run at the end of every training epoch.
     # A bigger number improves accuracy of validation stats, but slows
     # down the training.
-    VALIDATION_STEPS = 50
+    VALIDATION_STEPS = 10
 
     # Backbone network architecture
     # Supported values are: resnet50, resnet101.
@@ -127,8 +127,8 @@ class Config(object):
     #         IMAGE_MAX_DIM is not used in this mode.
     IMAGE_RESIZE_MODE = "none"
     IMAGE_MIN_DIM = 100
-    # IMAGE_MAX_DIM = 1280
-    IMAGE_MAX_DIM = 960
+    IMAGE_MAX_DIM = 512
+    # IMAGE_MAX_DIM = 960
     # Minimum scaling ratio. Checked after MIN_IMAGE_DIM and can force further
     # up scaling. For example, if set to 2 then images are scaled up to double
     # the width and height, or more, even if MIN_IMAGE_DIM doesn't require it.
@@ -173,7 +173,7 @@ class Config(object):
 
     # Minimum probability value to accept a detected instance
     # ROIs below this threshold are skipped
-    DETECTION_MIN_CONFIDENCE = 0.7
+    DETECTION_MIN_CONFIDENCE = 0.9
 
     # Non-maximum suppression threshold for detection
     DETECTION_NMS_THRESHOLD = 0.3
@@ -191,8 +191,8 @@ class Config(object):
     # Loss weights for more precise optimization.
     # Can be used for R-CNN training setup.
     LOSS_WEIGHTS = {
-        "mrcnn_kp_loss": 0.,
-        "mrcnn_uncertainty_loss": 1.
+        "mrcnn_kp_loss": 1.,
+        "mrcnn_uncertainty_loss": 0.  # uncomment mahalonobis in model
     }
 
     # Use RPN ROIs or externally generated ROIs for training

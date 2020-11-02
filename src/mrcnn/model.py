@@ -1307,7 +1307,7 @@ def build_fpn_mask_graph(rois, feature_maps, image_meta,
     return x
 
 
-def build_keypoints_graph(feature_maps, train_bn=True, num_points=8, out_shape=960):
+def build_keypoints_graph(feature_maps, train_bn=True, num_points=8):
 
     feature_maps = KL.Lambda(lambda x: K.expand_dims(x, 0))(feature_maps)
     x = KL.TimeDistributed(KL.Conv2D(512, (3, 3), padding="same"), name="mrcnn_kp_conv1")(feature_maps)
@@ -1406,12 +1406,10 @@ def build_uncertainty_graph(feature_maps, input_size, train_bn=True, num_points=
 
     x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_uncertainty_flat")(x)
 
-    # x = KL.TimeDistributed(KL.Dense((num_points * 2 + 1) * num_points, activation="elu"), name="mrcnn_uncertainty")(x)
-    # x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)  #uncertainty 10x10
-
-    x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)  # uncertainty 5x2x2
+    x = KL.TimeDistributed(KL.Dense((num_points * 2 + 1) * num_points, activation="elu"), name="mrcnn_uncertainty")(x)
+    # x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)  # uncertainty 5x2x2
     x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)  #uncertainty 10x10
-    x = KL.TimeDistributed(KL.Reshape([num_points, 3]))(x)
+    # x = KL.TimeDistributed(KL.Reshape([num_points, 3]))(x)
     x = KL.TimeDistributed(KL.Lambda(lambda y: fill_triangular(y)))(x)
     return x
 
@@ -1570,18 +1568,26 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
     y = K.mean(K.sum(pred_kp, axis=4) * K.arange(0, stop=input_shape[0, 1]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
         input_shape[..., 1]
     pred_kp_float = K.stack([x, y], axis=-1)
-    pred_kp_float = K.cast(pred_kp_float, dtype=tf.float32)
     pred_kp_float = pred_kp_float[:, 0]
     target_kp = target_kp[:, 0]
-    sigma = tf.matmul(K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)), L)  # , axes=(4, 3))
-    det = sigma[..., 0, 0] * sigma[..., 1, 1] - sigma[..., 0, 1] * sigma[..., 1, 0]
+    pred_kp_float = K.reshape(pred_kp_float, (K.shape(pred_kp_float)[0], -1))
+    pred_kp_float = K.cast(pred_kp_float, dtype=tf.float32)
+    target_kp = K.reshape(target_kp, (K.shape(target_kp)[0], -1))
+    # pred_kp_float = K.print_tensor(pred_kp_float, "pred")
+    # target_kp = K.print_tensor(target_kp, "targ")
+    print("target_kp", target_kp)
+    sigma = tf.matmul(K.permute_dimensions(L, pattern=(0, 1, 3, 2)), L)
+    # sigma = tf.matmul(K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)), L)
+    print("sigma", sigma)
+    # det = sigma[..., 0, 0] * sigma[..., 1, 1] - sigma[..., 0, 1] * sigma[..., 1, 0]
+    det = tf.linalg.det(sigma)
     sigma_loss = K.log(det)
-    # inv_sigma = K.stack([K.stack([sigma[...,  1, 1] / det, -sigma[...,  0, 1] / det], axis=-1),
-    #                  K.stack([-sigma[...,  1, 0] / det, sigma[...,  0, 0] / det], axis=-1)], axis=-1)
     inv_sigma = tf.linalg.inv(sigma)
     diff = target_kp - pred_kp_float
-    mahalanobis = tf.matmul(K.expand_dims(diff, -2), inv_sigma)
+    mahalanobis = tf.matmul(diff, inv_sigma)
     mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1))
+    # mahalanobis = tf.matmul(K.expand_dims(diff, -2), inv_sigma)
+    # mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1))
 
     loss = K.mean(sigma_loss) + K.mean(mahalanobis)
 
@@ -2290,8 +2296,7 @@ class MaskRCNN():
         if mode == "training":
             mrcnn_keypoints = build_keypoints_graph(P2,
                                                     train_bn=config.TRAIN_BN,
-                                                    num_points=config.NUM_POINTS,
-                                                    out_shape=config.IMAGE_MAX_DIM)
+                                                    num_points=config.NUM_POINTS)
 
             mrcnn_uncertainty = build_uncertainty_graph(P2,
                                                         config.IMAGE_MAX_DIM,
@@ -2313,8 +2318,7 @@ class MaskRCNN():
 
             mrcnn_keypoints = build_keypoints_graph(P2,
                                                     train_bn=config.TRAIN_BN,
-                                                    num_points=config.NUM_POINTS,
-                                                    out_shape=config.IMAGE_MAX_DIM)
+                                                    num_points=config.NUM_POINTS)
 
             mrcnn_uncertainty = build_uncertainty_graph(P2,
                                                         config.IMAGE_MAX_DIM,
@@ -2385,6 +2389,7 @@ class MaskRCNN():
         f = h5py.File(filepath, mode='r')
         if 'layer_names' not in f.attrs and 'model_weights' in f:
             f = f['model_weights']
+        print("Loading weights from path:", filepath)
 
         # In multi-GPU training, we wrap the model. Get layers
         # of the inner model because they have the weights.
@@ -2593,8 +2598,8 @@ class MaskRCNN():
         layer_regex = {
             # all layers but the backbone
             "uncertainty": r"(mrcnn\_uncertainty.*)",
-            "heads": r"(mrcnn\_.*)|(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
-            "not_uncertainty": r"(res5.*)|(bn5.*)|(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
+            "heads": r"(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
+            "not_uncertainty": r"(mrcnn\_[^u]*)|(rpn\_.*)|(fpn\_.*)",
             # From a specific Resnet stage and up
             "3+": r"(res3.*)|(bn3.*)|(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
             "4+": r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)|(mrcnn\_.*)|(rpn\_.*)|(fpn\_.*)",
@@ -2816,7 +2821,8 @@ class MaskRCNN():
         # Run object detection
         kp, L = self.keras_model.predict([molded_images, image_metas], verbose=0)
 
-        sigma = np.matmul(np.transpose(L, [0, 1, 2, 4, 3]), L)
+        sigma = np.matmul(np.transpose(L, [0, 1, 3, 2]), L)
+        # sigma = np.matmul(np.transpose(L, [0, 1, 2, 4, 3]), L)
         # Process detections
 
         # results = []

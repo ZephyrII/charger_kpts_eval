@@ -40,7 +40,7 @@ class chargerConfig(Config):
     NAME = "charger"
     IMAGES_PER_GPU = 1
     NUM_CLASSES = 1 + 1  # Background + charger
-    STEPS_PER_EPOCH = 15000
+    STEPS_PER_EPOCH = 10000
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.0001
     NUM_POINTS = 4
@@ -145,15 +145,15 @@ class ChargerDataset(utils.Dataset):
                 #     kp = kps.find('keypoint' + str(i + 1))
                 # else:
                 kp = kps.find('keypoint' + str(i))
-                point_size = 10
+                point_size = 5
                 point_center = (
-                int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)),
-                int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)))
-                keypoints.append((point_center[1], point_center[0]))
+                    int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)),
+                    int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)))
+                keypoints.append(point_center)
                 # kp_maps[i, int(float(kp.find('y').text)*h), int(float(kp.find('x').text)*w)] = 1.0
                 # kp_maps[i, point_center[0] - point_size:point_center[0] + point_size,
                 # point_center[1] - point_size:point_center[1] + point_size] = 255
-                cv2.circle(kp_maps[i], point_center[::-1], point_size, 255, -1)
+                cv2.circle(kp_maps[i], point_center, point_size, 255, -1)
                 # kp_maps[i, point_center[0], point_center[1]] = 255
                 # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (5,5), sigmaX=2)
                 # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (3,3), sigmaX=0)
@@ -224,7 +224,7 @@ def train(model):
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
                 epochs=300,
-                layers='uncertainty')
+                layers='not_uncertainty')  # uncomment mahalonobis in model
 
 
 ############################################################
@@ -284,6 +284,15 @@ if __name__ == '__main__':
             "mrcnn_class_logits", "mrcnn_bbox_fc",
             "mrcnn_bbox", "mrcnn_mask"])
     else:
+        exclude = [
+            "mrcnn_uncertainty_conv1", "mrcnn_uncertainty_bn1",
+            "mrcnn_uncertainty_conv2", "mrcnn_uncertainty_bn2",
+            "mrcnn_uncertainty_conv3", "mrcnn_uncertainty_bn3",
+            "mrcnn_uncertainty_conv4", "mrcnn_uncertainty_bn4",
+            "mrcnn_uncertainty_conv5", "mrcnn_uncertainty_bn5",
+            "mrcnn_uncertainty_conv6", "mrcnn_uncertainty_bn6",
+            "mrcnn_uncertainty_flat", "mrcnn_uncertainty"
+        ]
         model.load_weights(weights_path, by_name=True)
 
     train(model)

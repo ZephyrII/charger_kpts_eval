@@ -31,15 +31,16 @@ class ChargerConfig(Config):
     # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
     # LEARNING_RATE = 0.001
-    NUM_POINTS = 4
+    # NUM_POINTS = 4
 
 
 class Detector:
 
-    def __init__(self, path_to_model, path_to_pole_model, path_to_model_bottom=None):
+    def __init__(self, path_to_model, path_to_pole_model, num_points_front, path_to_model_bottom=None):
         np.set_printoptions(suppress=True)
         np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
-        self.slice_size = (960, 960)
+        # self.slice_size = (960, 960)
+        self.slice_size = (512, 512)
         # self.slice_size = (1280, 1280)
         self.offset = (0, 0)
         self.scale = 1.0
@@ -69,12 +70,13 @@ class Detector:
             self.pole_sess = tf.compat.v1.Session(graph=self.pole_detection_graph)
 
         self.config = ChargerConfig()
+        self.config.NUM_POINTS = num_points_front
         self.config.display()
 
         model = modellib.MaskRCNN(mode="inference", config=self.config, model_dir=path_to_model)
 
         weights_path = model.find_last()
-        # weights_path = "/root/share/tf/Keras/31_08_heatmap/charger20200901T1045/mask_rcnn_charger_0002.h5"
+        # weights_path = "/root/share/tf/Keras/22_09_heatmap_unc/charger20200922T1344/mask_rcnn_charger_0016.h5"
 
         # Load weights
         # print("Loading weights ", weights_path)
@@ -117,9 +119,12 @@ class Detector:
             # center = np.unravel_index(kp.argmax(), kp.shape)
             raw_kp = kp
             background = kps
-            background = np.sum(np.delete(background, i, 0), axis=0)
-            # cv2.imshow("bg", background)
+            # raw_bg = np.sum(background, axis=0)
+            # raw_bg = raw_bg/np.max(raw_bg)*255
+            # print("maxmin", np.max(raw_bg), np.min(raw_bg))
+            # cv2.imshow("bg", cv2.applyColorMap(raw_bg.astype(np.uint8), cv2.COLORMAP_JET) )
             # cv2.waitKey(0)
+            background = np.sum(np.delete(background, i, 0), axis=0)
             # kp = kp - background
             xmin, ymin, xmax, ymax = self.bbox
             alpha = 0.8
@@ -128,8 +133,8 @@ class Detector:
             #                      cv2.resize(self.moving_avg_image[i, ymin:ymax, xmin:xmax], self.slice_size), 1 - alpha,
             #                      0.0)
             kp = kp / np.max(kp)
-            # cv2.imshow("kp", kp)
-            # cv2.waitKey(0)
+            cv2.imshow("kp", kp)
+            cv2.waitKey(0)
             h, w = kp.shape
             # ret, kp = cv2.threshold(kp, 0.5, 1.0, cv2.THRESH_BINARY)
             ret, kp = cv2.threshold(kp, 0.2, 1.0, cv2.THRESH_BINARY)
@@ -188,7 +193,11 @@ class Detector:
         self.gt_pose = gt_pose
         self.detections = []
         self.best_detection = None
-        self.init_detection(frame)
+
+        self.bbox = [0, 0, 512, 512]
+        self.scale = (1, 1)
+        self.get_CNN_output(frame)
+        # self.init_detection(frame)
         # if len(self.detections) == 0:
         if self.best_detection is None:
             print("No detections")
@@ -213,11 +222,11 @@ class Detector:
         ymax = int(ymax * frame.shape[0] / self.slice_size[0])
         xmin = int(xmin * frame.shape[1] / self.slice_size[1])
         xmax = int(xmax * frame.shape[1] / self.slice_size[1])
-        margin = (xmax - xmin) * 0.02, (ymax - ymin) * 0.02
+        margin = (xmax - xmin) * 0.1, (ymax - ymin) * 0.1
 
-        xmin -= int(6 * margin[0])
+        xmin -= int(margin[0])
         ymin -= int(margin[1])
-        xmax += int(6 * margin[0])
+        xmax += int(margin[0])
         ymax += int(margin[1])
         self.scale = ((xmax - xmin) / self.slice_size[0], (ymax - ymin) / self.slice_size[1])
         self.bbox = [xmin, ymin, xmax, ymax]
@@ -229,7 +238,6 @@ class Detector:
             # print(e.msg)
             return
 
-        # xmin, ymin, xmax, ymax = self.detect_pole(small_frame)
         # print("pole detection time:", time.time() - start_time)
 
         self.get_CNN_output(frame)
