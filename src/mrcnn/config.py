@@ -127,7 +127,7 @@ class Config(object):
     #         IMAGE_MAX_DIM is not used in this mode.
     IMAGE_RESIZE_MODE = "none"
     IMAGE_MIN_DIM = 100
-    IMAGE_MAX_DIM = 512
+    # IMAGE_MAX_DIM = 512
     # IMAGE_MAX_DIM = 960
     # Minimum scaling ratio. Checked after MIN_IMAGE_DIM and can force further
     # up scaling. For example, if set to 2 then images are scaled up to double

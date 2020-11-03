@@ -1406,10 +1406,11 @@ def build_uncertainty_graph(feature_maps, input_size, train_bn=True, num_points=
 
     x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_uncertainty_flat")(x)
 
-    x = KL.TimeDistributed(KL.Dense((num_points * 2 + 1) * num_points, activation="elu"), name="mrcnn_uncertainty")(x)
-    # x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)  # uncertainty 5x2x2
-    x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)  #uncertainty 10x10
-    # x = KL.TimeDistributed(KL.Reshape([num_points, 3]))(x)
+    x = KL.TimeDistributed(KL.Dense((num_points * 2 + 1) * num_points, activation="elu"), name="mrcnn_uncertainty")(
+        x)  # uncertainty NxN
+    # x = KL.TimeDistributed(KL.Dense(num_points * 3, activation="elu"), name="mrcnn_uncertainty")(x)  # uncertainty Nx2x2
+    x = KL.TimeDistributed(KL.Lambda(lambda y: y + tf.constant(1.)))(x)  # uncertainty NxN
+    # x = KL.TimeDistributed(KL.Reshape([num_points, 3]))(x)             # uncertainty Nx2x2
     x = KL.TimeDistributed(KL.Lambda(lambda y: fill_triangular(y)))(x)
     return x
 
@@ -1552,7 +1553,6 @@ def mrcnn_keypoints_loss_graph(target_kp, pred_kp):
     pred_kp = K.permute_dimensions(pred_kp, (0, 1, 4, 2, 3))
     loss = K.binary_crossentropy(target_kp, pred_kp)
     loss = K.mean(loss)
-    # loss += K.cast(K.mean(a), tf.float32)
     return loss
 
 
