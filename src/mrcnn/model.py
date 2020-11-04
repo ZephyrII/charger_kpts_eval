@@ -1358,19 +1358,6 @@ def build_keypoints_graph(feature_maps, train_bn=True, num_points=8):
 
 
 def build_uncertainty_graph(feature_maps, input_size, train_bn=True, num_points=8):
-    """Builds the computation graph of the mask head of Feature Pyramid Network.
-
-    rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
-          coordinates.
-    feature_maps: List of feature maps from different layers of the pyramid,
-                  [P2, P3, P4, P5]. Each has a different resolution.
-    image_meta: [batch, (meta data)] Image details. See compose_image_meta()
-    pool_size: The width of the square feature map generated from ROI Pooling.
-    num_classes: number of classes, which determines the depth of the results
-    train_bn: Boolean. Train or freeze Batch Norm layers
-
-    Returns: Masks [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, NUM_CLASSES]
-    """
 
     # Conv layers
     feature_maps = KL.Input(tensor=feature_maps, shape=(input_size / 4, input_size / 4, 256))
@@ -1560,14 +1547,19 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
 
     input_shape = parse_image_meta_graph(image_meta)['image_shape']
     pred_kp = K.permute_dimensions(pred_kp, (0, 1, 4, 2, 3))
-    pred_kp = pred_kp / K.max(pred_kp, axis=(3, 4), keepdims=True)
+    # Rescaling predicted maps to 0-1
+    pred_kp = (pred_kp - K.min(pred_kp, axis=(3, 4), keepdims=True)) / \
+              (K.max(pred_kp, axis=(3, 4), keepdims=True) - K.min(pred_kp, axis=(3, 4), keepdims=True))
+    # Binarize predicted heatmaps
     pred_kp *= K.cast(K.greater_equal(pred_kp, 0.8), tf.float32)
 
+    # Get weighted center of mass - coordiantes of predicted keypoints
     x = K.mean(K.sum(pred_kp, axis=3) * K.arange(0, stop=input_shape[0, 0]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
         input_shape[..., 0]
     y = K.mean(K.sum(pred_kp, axis=4) * K.arange(0, stop=input_shape[0, 1]), axis=-1) / K.sum(pred_kp, axis=(3, 4)) * \
         input_shape[..., 1]
     pred_kp_float = K.stack([x, y], axis=-1)
+    # Reshaping predicted and target keypoints to format [x1, y1, x2, y2, ...]
     pred_kp_float = pred_kp_float[:, 0]
     target_kp = target_kp[:, 0]
     pred_kp_float = K.reshape(pred_kp_float, (K.shape(pred_kp_float)[0], -1))
@@ -1575,9 +1567,10 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
     target_kp = K.reshape(target_kp, (K.shape(target_kp)[0], -1))
     # pred_kp_float = K.print_tensor(pred_kp_float, "pred")
     # target_kp = K.print_tensor(target_kp, "targ")
-    print("target_kp", target_kp)
+
+    # See: https://www.merl.com/publications/docs/TR2019-117.pdf UGLLI Face Alignment:Estimating Uncertainty with Gaussian Log-Likelihood Loss
     sigma = tf.matmul(K.permute_dimensions(L, pattern=(0, 1, 3, 2)), L)
-    # sigma = tf.matmul(K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)), L)
+    # sigma = tf.matmul(K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)), L) # Uncertainty Nx2x2
     print("sigma", sigma)
     # det = sigma[..., 0, 0] * sigma[..., 1, 1] - sigma[..., 0, 1] * sigma[..., 1, 0]
     det = tf.linalg.det(sigma)
@@ -1586,8 +1579,8 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
     diff = target_kp - pred_kp_float
     mahalanobis = tf.matmul(diff, inv_sigma)
     mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1))
-    # mahalanobis = tf.matmul(K.expand_dims(diff, -2), inv_sigma)
-    # mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1))
+    # mahalanobis = tf.matmul(K.expand_dims(diff, -2), inv_sigma) # Uncertainty Nx2x2
+    # mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1)) # Uncertainty Nx2x2
 
     loss = K.mean(sigma_loss) + K.mean(mahalanobis)
 
