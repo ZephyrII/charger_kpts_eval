@@ -44,6 +44,7 @@ class chargerConfig(Config):
     DETECTION_MIN_CONFIDENCE = 0.9
     LEARNING_RATE = 0.0001
     NUM_POINTS = 4
+    IMAGE_MAX_DIM = 960
 
 ############################################################
 #  Dataset

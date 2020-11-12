@@ -11,8 +11,7 @@ import math
 from Detector import Detector
 from PoseEstimator import PoseEstimator
 import rospy
-from sensor_msgs.msg import CompressedImage, NavSatFix
-from ublox_msgs.msg import NavRELPOSNED
+from sensor_msgs.msg import CompressedImage
 from geometry_msgs.msg import PoseStamped, Quaternion
 from scipy.spatial.transform import Rotation
 from custom_solvepnp_msg.msg import KeypointsWithCovarianceStamped
