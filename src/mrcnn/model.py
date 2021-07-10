@@ -1390,8 +1390,9 @@ def build_uncertainty_graph(feature_maps, input_size, train_bn=True, num_points=
     x = KL.TimeDistributed(KL.Conv2D(16, (3, 3), padding="same"), name="mrcnn_uncertainty_conv6")(x)
     x = KL.TimeDistributed(BatchNorm(), name='mrcnn_uncertainty_bn6')(x, training=train_bn)
     x = KL.Activation('relu')(x)
-
+    print("XX", x)
     x = KL.TimeDistributed(KL.Flatten(), name="mrcnn_uncertainty_flat")(x)
+    print("X", x)
 
     x = KL.TimeDistributed(KL.Dense((num_points * 2 + 1) * num_points, activation="elu"), name="mrcnn_uncertainty")(
         x)  # uncertainty NxN
@@ -1573,16 +1574,17 @@ def mrcnn_uncertainty_loss_graph(target_kp, pred_kp, L, image_meta):
     # sigma = tf.matmul(K.permute_dimensions(L, pattern=(0, 1, 2, 4, 3)), L) # Uncertainty Nx2x2
     print("sigma", sigma)
     # det = sigma[..., 0, 0] * sigma[..., 1, 1] - sigma[..., 0, 1] * sigma[..., 1, 0]
-    det = tf.linalg.det(sigma)
-    sigma_loss = K.log(det)
-    inv_sigma = tf.linalg.inv(sigma)
-    diff = target_kp - pred_kp_float
-    mahalanobis = tf.matmul(diff, inv_sigma)
-    mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1))
+    # det = tf.linalg.det(sigma)
+    # sigma_loss = K.log(det)
+    # inv_sigma = tf.linalg.inv(sigma)
+    # diff = target_kp - pred_kp_float
+    # mahalanobis = tf.matmul(diff, inv_sigma)
+    # mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1))
+
     # mahalanobis = tf.matmul(K.expand_dims(diff, -2), inv_sigma) # Uncertainty Nx2x2
     # mahalanobis = tf.matmul(mahalanobis, K.expand_dims(diff, -1)) # Uncertainty Nx2x2
 
-    loss = K.mean(sigma_loss) + K.mean(mahalanobis)
+    loss = K.sum(sigma) #K.mean(sigma_loss) + K.mean(mahalanobis)
 
     return loss
 

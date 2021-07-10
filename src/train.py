@@ -122,7 +122,7 @@ class ChargerDataset(utils.Dataset):
         #     xmax=960
         # if ymax>960:
         #     ymax=960
-        image = image[ymin:ymax, xmin:xmax]
+        # image = image[ymin:ymax, xmin:xmax]
         image = cv2.resize(image, (self.image_info[image_id]['width'], self.image_info[image_id]['height']))
         return image
 
@@ -147,25 +147,29 @@ class ChargerDataset(utils.Dataset):
                 # else:
                 kp = kps.find('keypoint' + str(i))
                 point_size = 5
+                # point_center = (
+                #     int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)),
+                #     int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)))
                 point_center = (
-                    int((float(kp.find('x').text) * w - xmin) * self.image_info[image_id]['width'] / (xmax - xmin)),
-                    int((float(kp.find('y').text) * h - ymin) * self.image_info[image_id]['height'] / (ymax - ymin)))
+                    int((float(kp.find('x').text) * w)),
+                    int((float(kp.find('y').text) * h)))
                 keypoints.append(point_center)
                 # kp_maps[i, int(float(kp.find('y').text)*h), int(float(kp.find('x').text)*w)] = 1.0
                 # kp_maps[i, point_center[0] - point_size:point_center[0] + point_size,
                 # point_center[1] - point_size:point_center[1] + point_size] = 255
                 cv2.circle(kp_maps[i], point_center, point_size, 255, -1)
-                # kp_maps[i, point_center[0], point_center[1]] = 255
+
+                kp_maps[i, point_center[0], point_center[1]] = 255
                 # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (5,5), sigmaX=2)
                 # kp_maps[i] = cv2.GaussianBlur(kp_maps[i], (3,3), sigmaX=0)
-                # image = self.load_image(image_id).astype(np.float32)/255
-                # kap = kp_maps[i].astype(np.float32)/255
-                # kap = cv2.cvtColor(kap, cv2.COLOR_GRAY2BGR)
-                # print("shapes", image.shape, kap.shape)
-                # alpha=0.8
-                # out = cv2.addWeighted(image, alpha, kap, 1-alpha, 0.0)
-                # cv2.imshow('xddlol', out)
-                # cv2.waitKey(0)
+                image = self.load_image(image_id).astype(np.float32)/255
+                kap = kp_maps[i].astype(np.float32)/255
+                kap = cv2.cvtColor(kap, cv2.COLOR_GRAY2BGR)
+                print("shapes", image.shape, kap.shape)
+                alpha=0.8
+                out = cv2.addWeighted(image, alpha, kap, 1-alpha, 0.0)
+                cv2.imshow('xddlol', out)
+                cv2.waitKey(0)
 
         return kp_maps, keypoints
 

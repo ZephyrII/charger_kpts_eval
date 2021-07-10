@@ -46,11 +46,15 @@ class DetectorNode:
         # Paths to trained models: front, bask and YOLO pole detector
         # path_to_model_bottom = "/root/share/tf/Keras/09_05_bottom_PP"
         path_to_model_bottom = "/root/share/tf/Keras/18_06_PP_4_wo_mask_bigger_head"
-        path_to_model_front = "/root/share/tf/Keras/15_10_heatmap_final"  #
-        # path_to_model_front = "/root/share/tf/Keras/7_10_heatmap_9_points"
+        path_to_model_front = "/root/share/tf/Keras/15_10_heatmap_final"
+        # path_to_model_front = "/root/share/tf/Keras/28_11_roof"
+        # path_to_model_front = "/root/share/tf/Keras/28_11_roof/charger20201202T1055/mask_rcnn_charger_0004.h5"
         # path_to_model_front = "/root/share/tf/Keras/2_11_AR"
-        path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '18_09trained_weights_final.h5')
-        # path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '13_10trained_weights_final.h5')
+	# path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '18_09trained_weights_final.h5')
+    #     path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '13_10trained_weights_final.h5')
+        path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '24_11trained_weights_final.h5')
+        # path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '24_11ep001-loss5.416-val_loss5.967.h5')
+
         self.num_points_front = 4
         # Set True to equalize histogram of input image
         self.equalize_histogram = False
@@ -68,16 +72,28 @@ class DetectorNode:
                                                  [0, 0, 1]]).astype(np.float64)
         self.pointgrey_camera_distortion = (-0.04002205, 0.04100822, 0.00137423, 0.00464031, 0.0)
         # 3D coordinates of points depending of used variant: 5 points-corners, 4-point black rectangles, 9-both
-        if self.num_points_front == 5:
-            self.object_points = [[-0.3838, -0.0252, -0.6103], [0.3739, -0.0185, -0.6131], [2.7607, 0.7064, -0.1480],
-                                  [2.8160, -0.9127, -0.1428], [-0.1048, -0.7433, -0.0434]]
-        elif self.num_points_front == 4:
-            self.object_points = [[0.0145, -0.1796, -0.6472], [2.7137, 0.7782, -0.0808], [2.3398, -0.5353, -0.0608],
-                                  [0.2374, -0.5498, -0.0778]]
-        elif self.num_points_front == 9:
-            self.object_points = [[0.0145, -0.1796, -0.6472], [2.7137, 0.7782, -0.0808], [2.3398, -0.5353, -0.0608],
-                                  [0.2374, -0.5498, -0.0778], [-0.3838, -0.0252, -0.6103], [0.3739, -0.0185, -0.6131],
-                                  [2.7607, 0.7064, -0.1480], [2.8160, -0.9127, -0.1428], [-0.1048, -0.7433, -0.0434]]
+        if self.num_points_front == 4:
+            # self.object_points = [[-0.31329, 0.02334, -0.62336], [-0.04812, 0.26695, -0.619169],
+                                #   [0.09679, 0.26416, -0.61086], [0.34823, 0.01992, -0.605189]]       #roof
+            self.object_points = [[-0.35792, 0.02384, -0.63703], [0.3991, 0.01473, -0.60985],
+                                  [2.82224, 0.90896, -0.05048], [-0.10018, 0.74608, -0.05833]]       #corners
+            # self.object_points = [[0.01755, 0.30737, -0.624479], [2.71971, -0.65149, -0.05814],
+                                  # [2.3428, 0.66646, -0.03803], [0.24037, 0.67778, -0.05468]]       #tape
+        elif self.num_points_front == 8:
+            self.object_points = [[0.01755, 0.30737, -0.624479], [2.71971, -0.65149, -0.05814],
+                                  [2.3428, 0.66646, -0.03803], [0.24037, 0.67778, -0.05468],
+                                  [-0.35792, 0.02384, -0.63703], [0.3991, 0.01473, -0.60985],
+                                  [2.82224, 0.90896, -0.05048], [-0.10018, 0.74608, -0.05833]]       #tape
+        # if self.num_points_front == 5:
+        #     self.object_points = [[-0.3838, -0.0252, -0.6103], [0.3739, -0.0185, -0.6131], [2.7607, 0.7064, -0.1480],
+        #                           [2.8160, -0.9127, -0.1428], [-0.1048, -0.7433, -0.0434]]
+        # elif self.num_points_front == 4:
+        #     self.object_points = [[0.0145, -0.1796, -0.6472], [2.7137, 0.7782, -0.0808], [2.3398, -0.5353, -0.0608],
+        #                           [0.2374, -0.5498, -0.0778]]
+        # elif self.num_points_front == 9:
+        #     self.object_points = [[0.0145, -0.1796, -0.6472], [2.7137, 0.7782, -0.0808], [2.3398, -0.5353, -0.0608],
+        #                           [0.2374, -0.5498, -0.0778], [-0.3838, -0.0252, -0.6103], [0.3739, -0.0185, -0.6131],
+        #                           [2.7607, 0.7064, -0.1480], [2.8160, -0.9127, -0.1428], [-0.1048, -0.7433, -0.0434]]
         self.keypoints = None
         self.gt_keypoints = []
         self.blackfly_image_timestamp = None
@@ -113,16 +129,19 @@ class DetectorNode:
             images = os.listdir(os.path.join(self.read_from_dir_path, 'annotations'))
             images = iter(images)
         else:
-            rospy.Subscriber(self.blackfly_topic, CompressedImage, self.update_blackfly_image, queue_size=1)
+            rospy.Subscriber(self.blackfly_topic, CompressedImage, self.update_blackfly_image, queue_size=1, buff_size=2**24)
             rospy.Subscriber(self.pointgrey_topic, CompressedImage, self.update_pointgrey_image, queue_size=1)
         while not rospy.is_shutdown():  # and self.pointgrey_image is not None:
             if self.read_from_dir_path is not None:
                 self.read_from_dir(images, self.read_from_dir_path)
             if self.blackfly_image is not None:
+                starttime = time.time()
                 if self.detector.bottom:
                     self.detect(self.pointgrey_image, self.pointgrey_image_timestamp)
                 else:
                     self.detect(self.blackfly_image, self.blackfly_image_timestamp)
+                print("processing time: ", time.time()-starttime, " seconds")
+                print("Current time-image time: ", time.time()-self.blackfly_image_timestamp.to_sec(), " seconds")
             k = cv2.waitKey(10)
             if k == ord('q') or k == 27:
                 exit(0)

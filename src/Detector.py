@@ -96,9 +96,9 @@ class Detector:
         for i, kp in enumerate(kps):
             raw_kp = kp
             # subtract all other heatmaps from current heatmap. Use when more than one detection is on the same point on image
-            # background = kps
-            # background = np.sum(np.delete(background, i, 0), axis=0)
-            # kp = kp - background
+            background = kps
+            background = np.sum(np.delete(background, i, 0), axis=0)
+            kp = kp - background
 
             # add to current heatmap moving average from last detections. Use to avoid false detections
             # far from from last detection. Uncomment line 124 to update moving avg
@@ -120,7 +120,7 @@ class Detector:
             X = np.argwhere(kp == 1)
             if X.shape[0] == 0:
                 absolute_kp.append((0, 0))
-                heatmap_uncertainty = np.array([[np.inf, np.inf], [np.inf, np.inf]])
+                heatmap_uncertainty.append(np.array([[np.inf, np.inf], [np.inf, np.inf]]))
                 continue
             # Init algorithm for clustering
             clustering = DBSCAN(eps=3, min_samples=2)
@@ -140,10 +140,10 @@ class Detector:
 
             # self.update_moving_avg(i, mask)
             # Get uncertainty of kp prediction based on shape of cluster
-            if mask[mask != 0].reshape(-1).shape == 0:
-                heatmap_uncertainty = np.full((2, 2), np.inf)
-            else:
-                heatmap_uncertainty.append(np.cov(cluster.T, aweights=mask[mask != 0].reshape(-1)))
+            # if mask[mask != 0].reshape(-1).shape == 0:
+            #     heatmap_uncertainty = np.full((2, 2), np.inf)
+            # else:
+            #     heatmap_uncertainty.append(np.cov(cluster.T, aweights=mask[mask != 0].reshape(-1)))
             # Get weighted center of mass of cluster which is prediceted keypoint
             if np.sum(mask) == 0:
                 center = (0, 0)
@@ -190,6 +190,7 @@ class Detector:
         # self.get_CNN_output(frame)
 
         # self.init_detection(frame)
+        t1 = time.time()
         small_frame = cv2.resize(frame, (self.slice_size[1], self.slice_size[0]))
 
         ymin, xmin, ymax, xmax = self.yolo.detect_image(Image.fromarray(small_frame))
@@ -212,7 +213,12 @@ class Detector:
         except cv2.error as e:
             # print(e.msg)
             return
+        print("kp shape", small_frame.shape)
+        t2 = time.time()
+        print("T1", t2-t1)
         self.get_CNN_output(frame)
+        t3 = time.time()
+        print("T2", t3-t2)
         if self.best_detection is None:
             print("No detections")
         return
