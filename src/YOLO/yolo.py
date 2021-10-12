@@ -8,7 +8,7 @@ import os
 from timeit import default_timer as timer
 
 import numpy as np
-from keras import backend as K
+# from keras import backend as K
 from keras.models import load_model
 from keras.layers import Input
 from PIL import Image, ImageFont, ImageDraw
@@ -16,8 +16,15 @@ from PIL import Image, ImageFont, ImageDraw
 from YOLO.yolo3.model import yolo_eval, yolo_body, tiny_yolo_body
 from YOLO.yolo3.utils import letterbox_image
 import os
-from keras.utils import multi_gpu_model
-
+# from keras.utils import multi_gpu_model
+import tensorflow.compat.v1.keras.backend as K
+import tensorflow as tf
+tf.compat.v1.disable_eager_execution()
+gpus = tf.config.experimental.list_physical_devices('GPU')
+for gpu in gpus:
+  tf.config.experimental.set_memory_growth(gpu, True)
+# os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+# os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 class YOLO(object):
     _defaults = {
@@ -94,8 +101,6 @@ class YOLO(object):
 
         # Generate output tensor targets for filtered bounding boxes.
         self.input_image_shape = K.placeholder(shape=(2,))
-        if self.gpu_num >= 2:
-            self.yolo_model = multi_gpu_model(self.yolo_model, gpus=self.gpu_num)
         boxes, scores, classes = yolo_eval(self.yolo_model.output, self.anchors,
                                            len(self.class_names), self.input_image_shape,
                                            score_threshold=self.score, iou_threshold=self.iou)

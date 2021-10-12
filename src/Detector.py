@@ -1,46 +1,42 @@
-import tensorflow as tf
 import numpy as np
 import cv2
-import time
-from mrcnn.config import Config
-from mrcnn import model as modellib
+from tensorflow.python.eager.context import device
+from pl_charger.charger_kpts import ChargerKpts
 from YOLO.yolo import YOLO
 from PIL import Image
 from sklearn.cluster import DBSCAN
-
+import torch
+import time
 try:
     from cv2 import cv2
 except ImportError:
     pass
+from timebudget import timebudget
+
+timebudget.report_at_exit()
 
 
-class ChargerConfig(Config):
+class ChargerConfig():
 
-    NAME = "charger"
-    GPU_COUNT = 1
-    IMAGES_PER_GPU = 1
-    NUM_CLASSES = 1 + 1  # Background + charger
-    # Skip detections with < 90% confidence
     DETECTION_MIN_CONFIDENCE = 0.9
+    NUM_POINTS = 4
     IMAGE_MAX_DIM = 960
 
 
 class Detector:
 
-    def __init__(self, path_to_model, path_to_pole_model, num_points_front, path_to_model_bottom=None):
+    def __init__(self, path_to_model, path_to_pole_model, num_points):
         np.set_printoptions(suppress=True)
         np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
         self.config = ChargerConfig()
-        self.config.NUM_POINTS = num_points_front
-        self.config.display()
+        self.config.NUM_POINTS = num_points
+
         # Size of image passed to network defined above as IMAGE_MAX_DIM. Should be the asme as used during training
         self.slice_size = (self.config.IMAGE_MAX_DIM, self.config.IMAGE_MAX_DIM)
         # Top left corner of ROI with charging pole
         self.offset = (0, 0)
         # scaling factors in x and y axis used to fit ROI to IMAGE_MAX_DIMxIMAGE_MAX_DIM size
         self.scale = (1.0, 1.0)
-        # self.charger_to_slice_ratio = 0.5
-
         self.detections = []
         self.best_detection = None
         self.bbox = None
@@ -51,54 +47,40 @@ class Detector:
         # Init YOLO model using path to weights. Should be trained using keras-yolo3 repo
         self.yolo = YOLO(model_path=path_to_pole_model)
 
-        # Get weights and init keypoints network
-        if path_to_model.endswith(".h5"):
-            weights_path = path_to_model
-            path_to_model = "/".join(path_to_model.split("/")[:-1])
-            model = modellib.MaskRCNN(mode="inference", config=self.config, model_dir=path_to_model)
-        else:
-            model = modellib.MaskRCNN(mode="inference", config=self.config, model_dir=path_to_model)
-            weights_path = model.find_last()
-
-        # Load weights
-        model.load_weights(weights_path, by_name=True)
-        self.det_model = model
-
-        # Init model used by back camera if path to weights is provided
-        if path_to_model_bottom is not None:
-            self.config.NUM_POINTS = 4
-            model_bottom = modellib.MaskRCNN(mode="inference", config=self.config, model_dir=path_to_model_bottom)
-            weights_path_bottom = model_bottom.find_last()
-
-            # Load weights
-            print("Loading weights ", weights_path_bottom)
-            model_bottom.load_weights(weights_path_bottom, by_name=True)
-            self.det_model_bottom = model_bottom
+        # Init pl model
+        model = ChargerKpts.load_from_checkpoint(path_to_model, gpus=1, precision=16, device='cuda')
+        model.eval()     
+        self.det_model = model.to("cuda")
 
 
     def init_size(self, shape):
         self.frame_shape = shape
         self.moving_avg_image = np.full((self.config.NUM_POINTS, shape[0], shape[1]), 0.0, dtype=np.float64)
 
+    
     def get_CNN_output(self, image_np):
-        if self.bottom:
-            r = self.det_model_bottom.detect([image_np], verbose=0)
-        else:
-            r = self.det_model.detect([image_np], verbose=0)
-        uncertainty = r['uncertainty'][0][0]
-        kps = r['kp'][0][0]
+        image_np = np.expand_dims(image_np, 0)
+        image_np = np.transpose(image_np, [0,3,1,2])
+        image_tensor = torch.from_numpy(image_np).float()/255
+
+        with timebudget("Detection"):  
+            r =  self.det_model(image_tensor.to("cuda"))
+        
+        uncertainty = None 
+        kps = r.cpu().detach().numpy()
+        # kps = np.transpose(kps, [1,2,0])
         # Change dimensions order from [x, y, num_kp] to [num_kp, x, y]
-        kps = np.transpose(kps, (2, 0, 1))
+        # kps = np.transpose(kps, (2, 0, 1))
         # Buffers for kp coordinates in full, not scaled image and uncertainty from heatmap
         absolute_kp = []
         heatmap_uncertainty = []
 
-        for i, kp in enumerate(kps):
-            raw_kp = kp
+        for i, kp in enumerate(kps[0]):
             # subtract all other heatmaps from current heatmap. Use when more than one detection is on the same point on image
-            background = kps
-            background = np.sum(np.delete(background, i, 0), axis=0)
-            kp = kp - background
+            raw_kp = kp
+            # background = kps
+            # background = np.sum(np.delete(background, i, 0), axis=0)
+            # kp = kp - background
 
             # add to current heatmap moving average from last detections. Use to avoid false detections
             # far from from last detection. Uncomment line 124 to update moving avg
@@ -110,9 +92,8 @@ class Detector:
             #                      0.0)
 
             # Scale to 0-1 values to do clustering
+
             kp = (kp - np.min(kp)) / (np.max(kp) - np.min(kp))
-            # cv2.imshow("kp", kp)
-            # cv2.waitKey(0)
             h, w = kp.shape
             # Binarize kp heatmaps
             ret, kp = cv2.threshold(kp, 0.2, 1.0, cv2.THRESH_BINARY)
@@ -120,13 +101,15 @@ class Detector:
             X = np.argwhere(kp == 1)
             if X.shape[0] == 0:
                 absolute_kp.append((0, 0))
-                heatmap_uncertainty.append(np.array([[np.inf, np.inf], [np.inf, np.inf]]))
+                heatmap_uncertainty.append(([[np.finfo.max, np.finfo.max], [np.finfo.max, np.finfo.max]]))
                 continue
             # Init algorithm for clustering
-            clustering = DBSCAN(eps=3, min_samples=2)
+
+            clustering = DBSCAN(eps=3, min_samples=2, n_jobs=8)
             clustering.fit(X)
             cluster_scores = []
             # Get labels of all clusters
+
             unique_labels = np.unique(clustering.labels_)
 
             # for each cluster calculate their "score" by summing values of all pixels in cluster
@@ -149,11 +132,11 @@ class Detector:
                 center = (0, 0)
             else:
                 center = np.average(np.sum(mask, axis=1) * np.arange(w)) / np.sum(mask) * w, \
-                         np.average(np.sum(mask, axis=0) * np.arange(h)) / np.sum(mask) * h
+                        np.average(np.sum(mask, axis=0) * np.arange(h)) / np.sum(mask) * h
             absolute_kp.append(
                 ((center[1] * self.scale[0] + self.bbox[0]),
-                 (center[0] * self.scale[1] + self.bbox[1])))
-
+                (center[0] * self.scale[1] + self.bbox[1])))
+        # print("absolute_kp", absolute_kp)
         self.best_detection = dict(keypoints=absolute_kp, uncertainty=uncertainty,
                                    heatmap_uncertainty=np.array(heatmap_uncertainty))
 
@@ -175,7 +158,7 @@ class Detector:
             print("error", xmin, ymin, xmax, ymax, overlay.shape)
         cv2.accumulateWeighted(overlay, self.moving_avg_image[i], decay)
         # cv2.imshow("ma", cv2.resize(self.moving_avg_image[i], (960, 960)))
-
+    @timebudget
     def detect(self, frame):
         """Actual detection is divided at two parts. Full image is resized to IMAGE_MAX_DIM size.
         This image is sent to YOLO detector to get coordinates of charging pole. Then from image at full
@@ -184,15 +167,7 @@ class Detector:
         self.detections = []
         self.best_detection = None
 
-        # Testing ARTags
-        # self.bbox = [0, 0, 512, 512]
-        # self.scale = (1, 1)
-        # self.get_CNN_output(frame)
-
-        # self.init_detection(frame)
-        t1 = time.time()
         small_frame = cv2.resize(frame, (self.slice_size[1], self.slice_size[0]))
-
         ymin, xmin, ymax, xmax = self.yolo.detect_image(Image.fromarray(small_frame))
         ymin = int(ymin * frame.shape[0] / self.slice_size[0])
         ymax = int(ymax * frame.shape[0] / self.slice_size[0])
@@ -209,16 +184,11 @@ class Detector:
 
         try:
             frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
-            cv2.imshow("yolo", frame)
+            # cv2.imshow("yolo", frame)
         except cv2.error as e:
             # print(e.msg)
             return
-        print("kp shape", small_frame.shape)
-        t2 = time.time()
-        print("T1", t2-t1)
         self.get_CNN_output(frame)
-        t3 = time.time()
-        print("T2", t3-t2)
         if self.best_detection is None:
             print("No detections")
         return
