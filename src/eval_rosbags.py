@@ -3,10 +3,10 @@ import subprocess
 import signal
 from tqdm import tqdm
 
-paths = ["/root/share/tf/dataset/2020-11-09", "/root/share/tf/dataset/2020-11-13", "/root/share/tf/dataset/2020-12-14", "/root/share/tf/dataset/2020-12-16"]
+paths = ["/root/share/tf/dataset/2020-11-09", "/root/share/tf/dataset/2020-11-13", "/root/share/tf/dataset/2020-11-25", "/root/share/tf/dataset/2020-12-14", "/root/share/tf/dataset/2020-12-16"]
 
 out_path = "/root/share/tf/results_2.0"
-version = "resnet101"
+version = "corners_hrnet48_960_score_0.0"
 # scale = 0.8
 for path in tqdm(paths, "Dirs"):
         os.chdir(path)

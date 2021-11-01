@@ -40,7 +40,7 @@ class DetectorNode:
         self.blackfly_topic = '/blackfly/camera/image_color/compressed'
         rospy.init_node('deep_pose_estimator', log_level=rospy.DEBUG)
         # Paths to trained models: front, bask and YOLO pole detector
-        path_to_model_front = "/root/catkin_ws/src/charger_kpts_train/src/pl_charger/checkpoints/last.ckpt"
+        path_to_model_front = "/root/catkin_ws/src/charger_kpts_train/src/pl_charger/checkpoints/resnet101/last.ckpt"
         # path_to_model_front = "/root/share/tf/Keras/14_12_tape/charger20201214T1553/dot_10px.h5"
         # path_to_model_front = "/root/share/tf/Keras/14_1_corners_heatmap/"
         # path_to_model_front = "/root/share/tf/Keras/10_1_tape_heatmap_0.6"
@@ -110,7 +110,8 @@ class DetectorNode:
         #                          self.num_points_front)  # , path_to_model_bottom=path_to_model_bottom)
         # self.detector.init_size(self.blackfly_frame_shape)
 
-        self.detector = DetectorMmpose("/root/mmpose/work_dirs/hrnet_w48_charger_tape_384x288/epoch_100.pth", path_to_pole_model)
+        self.detector = DetectorMmpose("/root/mmpose/work_dirs/hrnet_w48_charger_corners_960x960/epoch_90.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/mmpose/work_dirs/hrnet_w48_charger_tape_960x960/epoch_90.pth", path_to_pole_model)
         self.pose_estimator = PoseEstimator(self.blackfly_camera_matrix)
 
     def get_image_shape(self, camera_topic):
@@ -190,7 +191,8 @@ class DetectorNode:
         # print("sssh", working_copy.shape)
         self.detector.detect(working_copy)
         if self.detector.best_detection is not None:
-            self.keypoints = self.detector.best_detection['keypoints'][0, :, :2]
+            # self.keypoints = self.detector.best_detection['keypoints'] #plightning
+            self.keypoints = self.detector.best_detection['keypoints'][0, :, :2] # mmpose
             # self.uncertainty = self.detector.best_detection['uncertainty']
             self.uncertainty = self.detector.best_detection['heatmap_uncertainty']
             self.draw_detection(disp)
@@ -213,7 +215,7 @@ class DetectorNode:
             # cv2.ellipse(frame, (int(pt[0]), int(pt[1])), (int(np.ceil(3 * np.sqrt(self.uncertainty[i, i]))),
             #                                               int(np.ceil(3 * np.sqrt(self.uncertainty[i + 1, i + 1])))),
             #             angle=0, startAngle=0, endAngle=360, color=(0, 255, 0), thickness=1)
-        cv2.imwrite('/root/catkin_ws/src/charger_kpts_train/src/test/out.jpg', frame)
+        cv2.imwrite('/root/catkin_ws/src/charger_kpts_train/src/test/out.jpg', cv2.resize(frame, (720,720)))
         # exit(0)
         # cv2.imshow("detection", cv2.resize(frame, self.detector.slice_size))
         # cv2.imshow("detection", frame)

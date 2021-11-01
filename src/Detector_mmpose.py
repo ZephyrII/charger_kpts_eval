@@ -45,7 +45,8 @@ class DetectorMmpose:
         self.slice_size = (960, 960)
         self.scale = (1.0, 1.0)
 
-        cfg = Config.fromfile("/root/mmpose/configs/charger/hrnet_w48_charger_tape_384x288.py")
+        # cfg = Config.fromfile("/root/mmpose/configs/charger/hrnet_w48_charger_tape_384x288.py")
+        cfg = Config.fromfile("/root/mmpose/configs/charger/hrnet_w48_charger_corners_960x960.py")
 
         # # if args.cfg_options is not None:
         # #     cfg.merge_from_dict(args.cfg_options)
@@ -97,7 +98,6 @@ class DetectorMmpose:
         di = DatasetInfo(cfg)
         pred, heatmaps = _inference_single_pose_model(self.det_model, frame, [bbox], dataset_info=di)
 
-        print("pred", pred[:,:, :2])
         
 
 
