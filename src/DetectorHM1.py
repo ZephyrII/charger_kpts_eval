@@ -1,9 +1,6 @@
 import numpy as np
 import cv2
-from tensorflow.python.eager.context import device
-from pl_charger.charger_kpts import ChargerKpts
-from pl_charger.charger_kpts_r50_1l_dense import ChargerKptsR50L1DENSE
-from pl_charger.charger_kpts_r50_1l import ChargerKptsR50L1
+from pl_charger.charger_kpts_r50_1l_HM1 import ChargerKptsR50L1HM1
 from YOLO.yolo import YOLO
 from PIL import Image
 from sklearn.cluster import DBSCAN
@@ -49,8 +46,7 @@ class Detector:
         self.yolo = YOLO(model_path=path_to_pole_model)
 
         # Init pl model
-        # model = ChargerKptsR50L1DENSE.load_from_checkpoint(path_to_model, gpus=1, precision=16, device='cuda')
-        model = ChargerKptsR50L1.load_from_checkpoint(path_to_model, gpus=1, precision=16, device='cuda')
+        model = ChargerKptsR50L1HM1.load_from_checkpoint(path_to_model, gpus=1, precision=16, device='cuda')
         model.eval()     
         self.det_model = model.to("cuda")
 
@@ -69,68 +65,53 @@ class Detector:
             r =  self.det_model(image_tensor.to("cuda"))
         
         uncertainty = None 
-        kps = r.detach().cpu().numpy()
-        # Buffers for kp coordinates in full, not scaled image and uncertainty from heatmap
-        absolute_kp = []
+        hm = r.detach().cpu().numpy().squeeze()
         heatmap_uncertainty = []
+        raw_kp = hm
+        kp = (hm - np.min(hm)) / (np.max(hm) - np.min(hm))
+        h, w = kp.shape
+        # Binarize kp heatmaps
+        ret, kp = cv2.threshold(kp, 0.2, 1.0, cv2.THRESH_BINARY)
+        # Get coordinates of white pixels
+        X = np.argwhere(kp == 1)
+        if X.shape[0] == 0:
+            preds = [(0, 0), (0, 0), (0, 0), (0, 0)]
+        # Init algorithm for clustering
+        clustering = DBSCAN(eps=3, min_samples=2, n_jobs=8)
+        # clustering = KMeans(n_clusters=4)
+        clustering.fit(X)
+        cluster_scores = []
+        # Get labels of all clusters
 
-        for i, kp in enumerate(kps[0]):
-            # subtract all other heatmaps from current heatmap. Use when more than one detection is on the same point on image
-            raw_kp = kp
-            # background = kps
-            # background = np.sum(np.delete(background, i, 0), axis=0)
-            # kp = kp - background
+        unique_labels = np.unique(clustering.labels_)
 
-            # add to current heatmap moving average from last detections. Use to avoid false detections
-            # far from from last detection. Uncomment line 124 to update moving avg
-            # xmin, ymin, xmax, ymax = self.bbox
-            # alpha = 0.8
-            # print("dtypes", kp.astype(np.float64).shape, self.moving_avg_image[i, ymin:ymax, xmin:xmax].shape)
-            # kp = cv2.addWeighted(kp.astype(np.float64), alpha,
-            #                      cv2.resize(self.moving_avg_image[i, ymin:ymax, xmin:xmax], self.slice_size), 1 - alpha,
-            #                      0.0)
+        # for each cluster calculate their "score" by summing values of all pixels in cluster
+        for id in np.unique(clustering.labels_):
+            cluster = X[np.where(clustering.labels_ == id)]
+            cluster_scores.append(np.sum(raw_kp[cluster[:, 0], cluster[:, 1]]))
 
-            # Scale to 0-1 values to do clustering
-
-            kp = (kp - np.min(kp)) / (np.max(kp) - np.min(kp))
-            h, w = kp.shape
-            # Binarize kp heatmaps
-            ret, kp = cv2.threshold(kp, 0.5, 1.0, cv2.THRESH_BINARY)
-            # Get coordinates of white pixels
-            X = np.argwhere(kp == 1)
-            if X.shape[0] == 0:
-                absolute_kp.append((0, 0))
-                heatmap_uncertainty.append(([[np.finfo.max, np.finfo.max], [np.finfo.max, np.finfo.max]]))
-                continue
-            # Init algorithm for clustering
-
-            clustering = DBSCAN(eps=3, min_samples=2, n_jobs=8)
-            clustering.fit(X)
-            cluster_scores = []
-            # Get labels of all clusters
-
-            unique_labels = np.unique(clustering.labels_)
-
-            # for each cluster calculate their "score" by summing values of all pixels in cluster
-            for id in np.unique(clustering.labels_):
-                cluster = X[np.where(clustering.labels_ == id)]
-                cluster_scores.append(np.sum(raw_kp[cluster[:, 0], cluster[:, 1]]))
             # Get pixels of cluster with max score
-            cluster = X[np.where(clustering.labels_ == unique_labels[np.argmax(cluster_scores)])]
+        num_clusters = min(self.config.NUM_POINTS, len(cluster_scores))
+        preds = np.zeros((self.config.NUM_POINTS, 2))
+        for id, cl_id in enumerate(np.argpartition(cluster_scores, -num_clusters)[-num_clusters:]):
+            cluster = X[np.where(clustering.labels_ == unique_labels[cl_id])]
             mask = np.zeros_like(kp)
             mask[cluster[:, 0], cluster[:, 1]] = raw_kp[cluster[:, 0], cluster[:, 1]]
 
-            # Get weighted center of mass of cluster which is prediceted keypoint
             if np.sum(mask) == 0:
                 center = (0, 0)
             else:
                 center = np.average(np.sum(mask, axis=1) * np.arange(w)) / np.sum(mask) * w, \
                         np.average(np.sum(mask, axis=0) * np.arange(h)) / np.sum(mask) * h
-            absolute_kp.append(
-                ((center[1] * self.scale[0] + self.bbox[0]),
-                (center[0] * self.scale[1] + self.bbox[1])))
+            preds[id] = ((center[1] * self.scale[0] + self.bbox[0]),
+                        (center[0] * self.scale[1] + self.bbox[1]))
+        preds = np.array(preds)
+        id_3, id_0 = np.argpartition(-preds[:, 0], -2)[-2:]
+        id_1 = np.argmax(preds[:, 1])
+        id_2 = list(set([0,1,2,3])-set([id_0, id_1, id_3]))[0]
+        preds = preds[[id_0, id_1, id_2, id_3]]
         # print("absolute_kp", absolute_kp)
-        self.best_detection = dict(keypoints=absolute_kp, uncertainty=uncertainty,
+        self.best_detection = dict(keypoints=preds, uncertainty=uncertainty,
                                    heatmap_uncertainty=np.array(heatmap_uncertainty), bbox=np.array(self.bbox))
 
     @timebudget
