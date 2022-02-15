@@ -76,10 +76,14 @@ class DetectorMmpose:
         pred, heatmaps = _inference_single_pose_model(self.det_model, frame, [[0,0, self.slice_size[0], self.slice_size[1]]], dataset_info=di)
 
         absolute_kp = []
+        relative_kp = []
         for i, kp in enumerate(pred[0, :, :2]):
             absolute_kp.append(
                 ((kp[0] * self.scale[0] + bbox[0]),
                 (kp[1] * self.scale[1] + bbox[1])))
+            relative_kp.append(
+                ((kp[0] * self.scale[0]),
+                (kp[1] * self.scale[1])))
 
-        self.best_detection = dict(keypoints=np.array(absolute_kp)[:, :2], uncertainty=[],
+        self.best_detection = dict(keypoints=np.array(absolute_kp)[:, :2], rel_keypoints=np.array(relative_kp), uncertainty=[],
                                    heatmap_uncertainty=np.array([]), bbox=bbox)

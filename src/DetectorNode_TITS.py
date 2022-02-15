@@ -20,6 +20,7 @@ from custom_solvepnp_msg.msg import KeypointsWithCovarianceStamped
 
 import xml.etree.ElementTree as ET
 import time
+from scipy.optimize import minimize
 
 
 # Uncomment to run on CPU
@@ -108,7 +109,22 @@ class DetectorNode:
         # self.detector = Detector(path_to_model_front,
         #                          path_to_pole_model,
         #                          self.num_points_front)  # , path_to_model_bottom=path_to_model_bottom)
-        self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet48_udp_512_hm512/epoch_7.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet48_udp_512_hm512/epoch_7.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet48_udp_512_hm256/epoch_3.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet48_udp_512_hm128_c2/epoch_8.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet48_udp_512_hm1024/epoch_10.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128/epoch_5.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm256/epoch_8.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512/epoch_8.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_litehrnet30_512_hm256/epoch_7.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_litehrnet30_512_hm128/epoch_10.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_litehrnet30_512_hm512/epoch_8.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet48_udp_512_hm256_c9/epoch_7.pth", path_to_pole_model)
+        self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet48_udp_512_hm128/epoch_7.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_litehrnet30_512_hm512_b4/epoch_9.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_litehrnet30_512_hm512_d0.5/epoch_8.pth", path_to_pole_model)
+        
+        
         self.detector.init_size(self.blackfly_frame_shape)
         self.pose_estimator = PoseEstimator(self.blackfly_camera_matrix)
 
@@ -195,17 +211,68 @@ class DetectorNode:
         print(f"Detection time: {toc - tic:0.4f} seconds")
         if self.detector.best_detection is not None:
             self.keypoints = self.detector.best_detection['keypoints'] 
+            self.rel_keypoints = self.detector.best_detection['rel_keypoints'] 
+            self.bbox = self.detector.best_detection['bbox']
+            self.refined_kpts = self.refine_dets(self.rel_keypoints)
             self.uncertainty = self.detector.best_detection['heatmap_uncertainty']
             self.draw_detection(disp)
             if timestamp is not None:
                 self.publish_keyponts(timestamp)
             self.blackfly_image = None
 
+
+    def refine_dets(self, kpts_pred):
+
+        kpts3d = self.object_points
+        K = np.array([[1,0,256], [0,1,256], [0,0,1]]).astype(np.float32)
+        x = np.zeros(9)
+
+        def convert_joints3d(joints3d, r, s, t) -> np.ndarray:
+            """Apply rotation, scale and translation to joints3d to generate glob_joints_3d
+            Parameters
+            ----------
+            kpts_format: str
+                Format of used kpt (coco or spin)
+            """
+
+            R, _ = cv2.Rodrigues(r)
+            joints3d = joints3d @ R
+            joints3d_tr = (
+                joints3d * s + t
+            )
+            return joints3d_tr
+        def f(x):
+            r, s, t = x[:3], x[3:6], x[6:]
+            j3d_tr = convert_joints3d(kpts3d, r, s, t)
+            j2d, _ = cv2.projectPoints(j3d_tr, np.zeros(3), np.zeros(3), K, None)
+            proj = j2d[:, 0, :]
+
+            # proj = K@convert_joints3d(kpts3d, r, s, t)
+            loss = np.sum(np.square(proj-kpts_pred))
+            return loss
+
+        opt = minimize(f, x, method="SLSQP")
+        x = opt.x
+
+        r, s, t = x[:3], x[3:6], x[6:]
+        j3d_tr = convert_joints3d(kpts3d, r, s, t)
+        kpts_refined, _ = cv2.projectPoints(j3d_tr, np.zeros(3), np.zeros(3), K, None)
+        print(kpts_pred, kpts_refined)
+        kpts_refined = kpts_refined[:, 0, :]+self.bbox[0:2]
+        return kpts_refined
+
+
+
+
+
     def draw_detection(self, frame):
         """Draw keypoints and uncertainty ellipses for 1,2 and 3 sigma"""
         colors = [(255,0,0), (0,255,0), (0,0,255), (255,255,0)]
-        for i, pt in enumerate(self.keypoints):
-            cv2.circle(frame, (int(pt[0]), int(pt[1])), 15-2*i, colors[i], -1)
+        # for i, pt in enumerate(self.keypoints):
+        for i, (kp, rkp) in enumerate(zip(self.keypoints, self.refined_kpts)):
+            print(rkp.shape, rkp)
+            cv2.circle(frame, (int(kp[0]), int(kp[1])), 15-2*i, colors[i], -1)
+            cv2.circle(frame, (int(rkp[0]), int(rkp[1])), 5, (255,255,255), -1)
         xmin, ymin, xmax, ymax =  self.detector.best_detection['bbox']
         crop = frame[ymin:ymax, xmin:xmax]
         cv2.imwrite('/root/catkin_ws/src/charger_kpts_train/src/test/out.jpg', cv2.resize(crop, (720,720)))
