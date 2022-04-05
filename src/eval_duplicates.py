@@ -5,7 +5,7 @@ import signal
 from tqdm import tqdm
 import rosbag
 
-models = ["c_hrnet48_udp_512_hm128_c2","c_hrnet48_udp_512_hm512"]
+models = ["AMCS_kpts"]
 BASE_DIR = "/root/share/tf/results_2.0/"
 paths = ["2020-11-09", "2020-11-13", "2020-11-25", "2020-12-14", "2020-12-16"]
 # paths = ["/home/tomasz/share_docker/eval_ds_crops/2020-12-16"]
@@ -31,7 +31,7 @@ for model in models:
                                     total_frames +=1
                                     for pair in pairs:
                                             dist = np.linalg.norm(kpts[pair[0]]-kpts[pair[1]])
-                                            if dist<2:
+                                            if dist<10:
                                                     dup = True
                                                     # print(msg)
                                     if dup:
