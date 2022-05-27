@@ -11,6 +11,7 @@ import cv2
 from DetectorHM1 import Detector
 from Detector import Detector
 from Detector_mmpose import DetectorMmpose
+from Detector_mmpose_unc import DetectorMmposeUnc
 from Detector_AMCS import DetectorAMCS
 from PoseEstimator import PoseEstimator
 import rospy
@@ -48,7 +49,7 @@ class DetectorNode:
         path_to_model_front = "/root/share/tf/pl_checkpoints/c_r50_1l_1px/epoch=13-step=8749.ckpt"
         path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '4_12trained_weights_final.h5')
         # path_to_pole_model = os.path.join('/root/share/tf/YOLO/', '13_10trained_weights_final.h5')
-        self.scale = 1.0
+        self.scale = [1.0, 1.0]
         self.num_points_front = 4
         # Set True to equalize histogram of input image
         self.equalize_histogram = False
@@ -103,8 +104,8 @@ class DetectorNode:
         self.last_image_timestamp = 0.0
 
         # To read images from directory insert here path to directory with images and annotations folder inside
-        self.read_from_dir_path = None  # '/root/share/tf/dataset/artag/out_close'\
-        self.blackfly_frame_shape = self.get_image_shape(self.blackfly_topic)
+        self.read_from_dir_path = "/root/share/tf/dataset/final_localization/corners_1.0/val/"  # '/root/share/tf/dataset/artag/out_close'\
+        self.blackfly_frame_shape = [3648, 5472] #self.get_image_shape(self.blackfly_topic)
         print('SHAPE:', self.blackfly_frame_shape)
         # Initialize detector
         # self.detector = Detector(path_to_model_front,
@@ -141,25 +142,31 @@ class DetectorNode:
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm256/epoch_8.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128/epoch_8.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm256_repr_v1/epoch_20.pth", path_to_pole_model)
+        # 512
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512_e20/epoch_18.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512/epoch_8.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512_repr_v2/epoch_15.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128_repr_v1/epoch_10.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128_repr_v2/epoch_15.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128/epoch_9.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128_repr_v3/epoch_20.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128_repr_v3/epoch_12.pth", path_to_pole_model)
+        # 256
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm256_e20/epoch_20.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm256_repr_v2/epoch_18.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512_repr_v1/epoch_17.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512_repr_v1/epoch_10.pth", path_to_pole_model)
-        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512_repr_v2/epoch_15.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512_repr_v2/epoch_19.pth", path_to_pole_model)
-        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm256_repr_v3/epoch_15.pth", path_to_pole_model)
-        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm512_e20/epoch_18.pth", path_to_pole_model)
-        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128/epoch_15.pth", path_to_pole_model)
+        # 128
+        self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128/epoch_15.pth", path_to_pole_model)
         # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128_repr_v4/epoch_13.pth", path_to_pole_model)
+        # self.detector = DetectorMmpose("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128_c2/epoch_14.pth", path_to_pole_model)
+        # self.detector = DetectorMmposeUnc("/root/share/tf/mmpose_checkpoints/c_hrnet32_udp_512_hm128_unc/epoch_7.pth", path_to_pole_model)
         
         
-        self.detector = DetectorAMCS("/root/share/tf/AMCS_checkpoints/model_2_1_121.pth", path_to_pole_model)
-        
+        # self.detector = DetectorAMCS("/root/share/tf/AMCS_checkpoints/model_2_1_121.pth", path_to_pole_model)
+        self.inside=0
+        self.outside=0
         
         self.detector.init_size(self.blackfly_frame_shape)
         self.pose_estimator = PoseEstimator(self.blackfly_camera_matrix)
@@ -174,14 +181,15 @@ class DetectorNode:
     def start(self):
         """Detecting in loop"""
         if self.read_from_dir_path is not None:
-            images = os.listdir(os.path.join(self.read_from_dir_path))
+            images = os.listdir(os.path.join(self.read_from_dir_path, "images"))
             images = iter(images)
         else:
             rospy.Subscriber(self.blackfly_topic, CompressedImage, self.update_blackfly_image, queue_size=1, buff_size=2**24)
         while not rospy.is_shutdown():  # and self.pointgrey_image is not None:
             if self.read_from_dir_path is not None:
-                self.read_from_dir(images, self.read_from_dir_path)
+                self.read_from_dir(images, self.read_from_dir_path, True)
             if self.blackfly_image is not None:
+                print("detect")
                 self.detect(self.blackfly_image, self.blackfly_image_timestamp)
             k = cv2.waitKey(10)
             if k == ord('q') or k == 27:
@@ -193,11 +201,10 @@ class DetectorNode:
         """Reads image from directory. Ready to read gt from annotations"""
         self.gt_keypoints = []
         fname = next(images)
-        img_fname = os.path.join(base_path, fname)
+        img_fname = os.path.join(base_path, "images", fname)
         self.blackfly_image = cv2.imread(img_fname)
         if read_gt:
-            ann_fname = os.path.join(base_path, 'annotations/', fname)
-            print(img_fname)
+            ann_fname = os.path.join(base_path, 'annotations/', fname[:-4]+".txt")
             tree = ET.parse(ann_fname)
             root = tree.getroot()
 
@@ -224,13 +231,13 @@ class DetectorNode:
         np_arr = np.frombuffer(image_msg.data, np.uint8)
         image = cv2.imdecode(np_arr, -1)
         image = cv2.undistort(image, self.blackfly_camera_matrix, self.blackfly_camera_distortion)
-        image = cv2.resize(image, (0,0), fx=self.scale, fy=self.scale)
+        # image = cv2.resize(image, (0,0), fx=self.scale, fy=self.scale)
         if self.equalize_histogram:
             img_yuv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
             img_yuv[:, :, 2] = cv2.equalizeHist(img_yuv[:, :, 2])
             image = cv2.cvtColor(img_yuv, cv2.COLOR_HSV2BGR)
         self.blackfly_image = image
-        print("Image update time", time.time()-self.last_image_timestamp)
+        # print("Image update time", time.time()-self.last_image_timestamp)
         self.last_image_timestamp = time.time()
 
 
@@ -247,14 +254,17 @@ class DetectorNode:
             self.keypoints = self.detector.best_detection['keypoints'] 
             self.rel_keypoints = self.detector.best_detection['rel_keypoints'] 
             self.bbox = self.detector.best_detection['bbox']
-            # self.refined_kpts, cost, tr_vec = self.refine_dets(self.keypoints)
-            self.uncertainty = self.detector.best_detection['heatmap_uncertainty']
+            self.scale = self.detector.best_detection['scale']
+            # tic_ref = time.perf_counter()
+            # self.refined_kpts, cost, tr_vec = self.refine_dets_v2(self.keypoints)
+            # toc_ref = time.perf_counter()
+            self.uncertainty = self.detector.best_detection['uncertainty']
             self.draw_detection(disp)
             if timestamp is not None:
                 self.publish_keyponts(timestamp)
             self.blackfly_image = None
         toc = time.perf_counter()
-        print(f"Detection time: {toc - tic:0.4f} seconds")
+        print(f"Detection time: {toc - tic:0.4f}") #, ref_time: {toc_ref - tic_ref:0.4f}")
 
 
     def refine_dets(self, kpts_pred):
@@ -320,30 +330,71 @@ class DetectorNode:
         kpts_refined = kpts_refined[:, 0, :]
         return kpts_refined, opt.cost, t
 
+    def refine_dets_v2(self, kpts_pred):
+
+        kpts3d = self.object_points
+        x = np.array([0.4,0,0,0,0,30]).astype(np.float32)
+        K = self.blackfly_camera_matrix
+
+        def convert_joints3d(joints3d, r, s, t) -> np.ndarray:
+            R, _ = cv2.Rodrigues(r)
+            joints3d = joints3d @ R
+            joints3d_tr = (
+                joints3d * s + t
+            )
+            return joints3d_tr
+
+        def fun_ls(x):
+            r, t = x[:3], x[3:]
+            j3d_tr = convert_joints3d(kpts3d, r, np.ones(3), t)
+            j2d, _ = cv2.projectPoints(j3d_tr, np.zeros(3), np.zeros(3), K, None)
+            proj = j2d[:, 0, :].reshape((-1))
+
+            loss = proj-kpts_pred.reshape((-1))
+            return loss
+
+        bounds = ((-np.pi/4,-np.pi/4,-np.pi/4,-50,-20, 0),
+                  (np.pi/4, np.pi/4, np.pi/4, 50, 20, 50))
+        opt = least_squares(fun_ls, x, bounds=bounds)
+        x = opt.x
+
+        r, t = x[:3], x[3:]
+        j3d_tr = convert_joints3d(kpts3d, r, np.ones(3), t)
+        kpts_refined, _ = cv2.projectPoints(j3d_tr, np.zeros(3), np.zeros(3), K, None)
+        kpts_refined = kpts_refined[:, 0, :]
+        dist = np.linalg.norm(kpts_pred-kpts_refined, axis=1)
+        # print("dist", dist.shape)
+        if np.max(dist)>2*np.mean(dist[np.arange(len(dist))!=np.argmax(dist)]):
+            print("refok")
+            return kpts_refined, opt.cost, t
+        else:
+            return kpts_pred, opt.cost, t
+
     def draw_detection(self, frame):
         """Draw keypoints and uncertainty ellipses for 1,2 and 3 sigma"""
         colors = [(255,0,0), (0,255,0), (0,0,255), (255,255,0)]
         colorsd = [(100,0,0), (0,100,0), (0,0,100), (100,100,0)]
         for i, kp in enumerate(self.keypoints):
-        # for i, (kp, rkp) in enumerate(zip(self.keypoints, self.refined_kpts)):
             cv2.circle(frame, (int(kp[0]), int(kp[1])), 25, colors[i], 5)
-            # cv2.circle(frame, (int(rkp[0]), int(rkp[1])), 15, colorsd[i], -1)
         xmin, ymin, xmax, ymax =  self.detector.best_detection['bbox']
-        crop = frame[ymin:ymax, xmin:xmax]
-        cv2.imwrite('/root/catkin_ws/src/charger_kpts_train/src/test/out.jpg', cv2.resize(crop, (720,720)))
-        
+        # crop = frame[ymin:ymax, xmin:xmax]
+        cv2.imwrite('/root/catkin_ws/src/charger_kpts_train/src/test/out.jpg', cv2.resize(frame, (720,720)))
+        # cv2.imwrite('/root/catkin_ws/src/charger_kpts_train/src/test/unc/'+str(self.blackfly_image_timestamp.secs)+'.jpg', cv2.resize(crop, (720,720)))
+        # time.sleep(2)
+
     def publish_keyponts(self, stamp):
         out_msg = KeypointsWithCovarianceStamped()
         out_msg.header.stamp = stamp
         out_msg.num_points = self.num_points_front
         out_msg.object_points = np.reshape(self.object_points, (-1))
         out_msg.covariance = np.reshape(self.uncertainty, (-1))
+        out_msg.scale = self.scale
         out_msg.keypoints = []
 
         # for idx, kp in enumerate(self.refined_kpts):
         for idx, kp in enumerate(self.keypoints):
-            out_msg.keypoints.append(kp[0]/self.scale)
-            out_msg.keypoints.append(kp[1]/self.scale)
+            out_msg.keypoints.append(kp[0])
+            out_msg.keypoints.append(kp[1])
 
         self.keypointsPublisher.publish(out_msg)
 

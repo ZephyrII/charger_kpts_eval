@@ -17,7 +17,7 @@ from mmpose.apis.inference import _inference_single_pose_model
 from mmpose.datasets import  DatasetInfo
 import time
 
-class DetectorMmpose:
+class DetectorMmposeUnc:
 
     def __init__(self, path_to_model, path_to_pole_model=None, num_points=4):
         np.set_printoptions(suppress=True)
@@ -26,8 +26,8 @@ class DetectorMmpose:
         self.scale = (1.0, 1.0)
         self.num_points = num_points
 
-        cfg = Config.fromfile("/root/mmpose/configs/charger/c_hrnet32_udp_512_hm128_v2.py")
-        # cfg = Config.fromfile("/root/mmpose/configs/charger/c_hrnet32_udp_512_hm128_unc.py")
+        # cfg = Config.fromfile("/root/mmpose/configs/charger/c_hrnet32_udp_512_hm128.py")
+        cfg = Config.fromfile("/root/mmpose/configs/charger/c_hrnet32_udp_512_hm128_unc.py")
         # cfg = Config.fromfile("/root/mmpose/configs/charger/c_hrnet32_udp_512_hm512_repr_v2.py")
 
         self.det_model = init_pose_model(
@@ -45,44 +45,21 @@ class DetectorMmpose:
         self.detections = []
         self.best_detection = None
 
-        small_frame = cv2.resize(frame, (self.slice_size[1], self.slice_size[0]))
-        ymin, xmin, ymax, xmax = self.yolo.detect_image(Image.fromarray(small_frame))
-        ymin = int(ymin * frame.shape[0] / self.slice_size[0])
-        ymax = int(ymax * frame.shape[0] / self.slice_size[0])
-        xmin = int(xmin * frame.shape[1] / self.slice_size[1])
-        xmax = int(xmax * frame.shape[1] / self.slice_size[1])
-        margin = (xmax - xmin) * 0.1, (ymax - ymin) * 0.5
-
-        xmin -= int(margin[0])
-        ymin -= int(margin[1])
-        xmax += int(margin[0])
-        ymax += int(margin[1])
-        xmin = np.max([xmin, 0])
-        ymin = np.max([ymin, 0])
-        xmax = np.min([xmax, self.frame_shape[1]])
-        ymax = np.min([ymax, self.frame_shape[0]])
-        self.scale = ((xmax - xmin) / self.slice_size[0], (ymax - ymin) / self.slice_size[1])
-        bbox = [xmin, ymin, xmax, ymax]
-
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        try:
-            frame = cv2.resize(frame[ymin:ymax, xmin:xmax], self.slice_size)
-            # cv2.imshow("yolo", frame)
-        except cv2.error as e:
-            # print(e.msg)
-            return
+        self.scale = ( frame.shape[0]/ self.slice_size[0], frame.shape[1] / self.slice_size[1])
+        frame = cv2.resize(frame, self.slice_size)
 
         cfg = Config.fromfile('/root/mmpose/configs/_base_/datasets/charger_tape.py')["dataset_info"]
         di = DatasetInfo(cfg)
         tic = time.perf_counter()
         result = _inference_single_pose_model(self.det_model, frame, [[0,0, self.slice_size[0], self.slice_size[1]]], dataset_info=di, return_heatmap=False)
         toc = time.perf_counter()
-        # print(f"MMP time: : {toc - tic:0.4f} seconds")
+        print(f"MMP time: : {toc - tic:0.4f} seconds")
         pred = result["preds"]
         heatmaps = result["output_heatmap"]
         #uncertainty
-        # uncertainty = result["output_uncertainty"][0]
-        uncertainty = np.zeros(64)
+        uncertainty = result["output_uncertainty"][0]
+        # uncertainty = np.zeros(64)
+        bbox = [0,0,0,0]
 
         absolute_kp = []
         relative_kp = []
